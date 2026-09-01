@@ -8,6 +8,7 @@ import {
   X,
 } from 'lucide-react'
 import { HideWindow } from '../../wailsjs/go/main/App'
+import type { gitx } from '../../wailsjs/go/models'
 import { useRepos, watchedRepos } from '../store/repos'
 import { Counters, StatusDot } from './Badges'
 import { SyncButton } from './SyncButton'
@@ -34,12 +35,15 @@ export function MiniPanel() {
     let ahead = 0
     let behind = 0
     let dirty = 0
-    for (const r of watched) {
-      ahead += r.status.ahead || 0
-      behind += r.status.behind || 0
-      if (r.status.staged + r.status.unstaged + r.status.untracked > 0) dirty++
+    // Worktrees are separate checkouts with their own branch and their own
+    // uncommitted work, so they count towards the totals like any repo.
+    const every = watched.flatMap((r) => [r.status, ...(r.worktrees ?? [])])
+    for (const st of every) {
+      ahead += st.ahead || 0
+      behind += st.behind || 0
+      if (st.staged + st.unstaged + st.untracked > 0) dirty++
     }
-    return { ahead, behind, dirty }
+    return { ahead, behind, dirty, rows: every.length }
   }, [watched])
 
   const scopeLabel =
@@ -86,28 +90,28 @@ export function MiniPanel() {
           </div>
         ) : (
           watched.map((r) => (
-            <div
-              key={r.path}
-              title={`${r.path}
-${r.status.branch}`}
-              className="flex items-center gap-1.5 px-2 py-[3px] hover:bg-surface-hover"
-            >
-              <StatusDot status={r.status} />
-              <span className="min-w-0 shrink truncate text-[12px]">{r.name}</span>
-              <span className="min-w-0 shrink truncate font-mono text-[10.5px] text-ink-faint">
-                {r.status.branch}
-              </span>
-              <span className="ml-auto flex shrink-0 items-center gap-1">
-                <Counters status={r.status} />
-                <SyncButton status={r.status} path={r.path} compact />
-              </span>
+            <div key={r.path}>
+              <Row name={r.name} path={r.path} status={r.status} />
+              {/* Worktrees are always shown here rather than hidden behind a
+                  chevron: this panel exists to say what is happening, and a
+                  worktree is where half the work usually is. */}
+              {(r.worktrees ?? []).map((wt, i, all) => (
+                <Row
+                  key={wt.path}
+                  name={wt.name}
+                  path={wt.path}
+                  status={wt}
+                  nested
+                  last={i === all.length - 1}
+                />
+              ))}
             </div>
           ))
         )}
       </div>
 
       <footer className="flex h-8 shrink-0 items-center gap-2 border-t border-line px-2 text-[11px] text-ink-faint">
-        <span>{watched.length} watched</span>
+        <span>{totals.rows} watched</span>
         {totals.ahead > 0 && <span className="text-ahead">↑{totals.ahead}</span>}
         {totals.behind > 0 && <span className="text-behind">↓{totals.behind}</span>}
         {totals.dirty > 0 && <span className="text-dirty">{totals.dirty} dirty</span>}
@@ -121,6 +125,59 @@ ${r.status.branch}`}
           Sync watched
         </button>
       </footer>
+    </div>
+  )
+}
+
+/** One line: status dot, name, branch, counters, sync. Nested rows hang off a
+ *  rail so a worktree reads as belonging to the repo above it. */
+function Row({
+  name,
+  path,
+  status,
+  nested,
+  last,
+}: {
+  name: string
+  path: string
+  status: gitx.Status
+  nested?: boolean
+  last?: boolean
+}) {
+  return (
+    <div
+      title={`${path}
+${status.branch}`}
+      className={
+        'relative flex items-center gap-1.5 py-[3px] pr-2 hover:bg-surface-hover ' +
+        (nested ? 'pl-[26px]' : 'pl-2')
+      }
+    >
+      {nested && (
+        <>
+          <span
+            className="pointer-events-none absolute left-[11px] top-0 w-px bg-line-strong"
+            style={{ height: last ? 11 : '100%' }}
+          />
+          <span className="pointer-events-none absolute left-[11px] top-[11px] h-px w-[9px] bg-line-strong" />
+        </>
+      )}
+
+      <StatusDot status={status} />
+      <span
+        className={
+          'min-w-0 shrink truncate text-[12px] ' + (nested ? 'text-ink-soft' : '')
+        }
+      >
+        {name}
+      </span>
+      <span className="min-w-0 shrink truncate font-mono text-[10.5px] text-ink-faint">
+        {status.branch}
+      </span>
+      <span className="ml-auto flex shrink-0 items-center gap-1">
+        <Counters status={status} />
+        <SyncButton status={status} path={path} compact />
+      </span>
     </div>
   )
 }

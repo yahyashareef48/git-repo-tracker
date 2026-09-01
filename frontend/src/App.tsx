@@ -64,6 +64,7 @@ export default function App() {
   const health = useRepos((s) => s.health)
   const checkHealth = useRepos((s) => s.checkHealth)
   const settings = useRepos((s) => s.settings)
+  const loadSettings = useRepos((s) => s.loadSettings)
   const toggleSettings = useRepos((s) => s.toggleSettings)
   const mode = useRepos((s) => s.mode)
   const setMode = useRepos((s) => s.setMode)
@@ -79,10 +80,13 @@ export default function App() {
     const onFocus = () => {
       refresh()
       checkHealth()
+      // Settings can change from the panel while the full window is hidden,
+      // and vice versa; both views read the same file, so re-read on focus.
+      loadSettings()
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [refresh, checkHealth])
+  }, [refresh, checkHealth, loadSettings])
 
   // Connectivity changes without anyone touching the app, so poll for it.
   useEffect(() => {
@@ -95,13 +99,19 @@ export default function App() {
   useEffect(() => {
     EventsOn('tray:fetch-all', () => runOpAll('fetch'))
     EventsOn('tray:sync-all', () => runOpAll('sync'))
-    EventsOn('window:mode', (m: unknown) => setMode(m === 'mini' ? 'mini' : 'full'))
+    EventsOn('window:mode', (m: unknown) => {
+      setMode(m === 'mini' ? 'mini' : 'full')
+      // Switching views is the moment the watch list matters, so make sure it
+      // is the one on disk rather than whatever was loaded at startup.
+      loadSettings()
+      refresh()
+    })
     return () => {
       EventsOff('tray:fetch-all')
       EventsOff('tray:sync-all')
       EventsOff('window:mode')
     }
-  }, [runOpAll, setMode])
+  }, [runOpAll, setMode, loadSettings, refresh])
 
   // Background fetch, so ahead/behind is not stale the moment you look away.
   useEffect(() => {
