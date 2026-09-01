@@ -37,7 +37,7 @@ the features that use them, and the app detects and reports their absence rather
 silently.
 
 **Shipped size (measured):** 6.6 MB installer, 12.2 MB exe, ~2.2 s cold start,
-~420 MB idle across 7 processes. The RAM estimate in this plan was wrong: WebView2
+~390 MB idle across 7 processes. The RAM estimate in this plan was wrong: WebView2
 is Chromium and starts six processes. The small binary buys disk, not memory.
 
 ---

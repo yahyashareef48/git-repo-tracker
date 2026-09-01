@@ -69,13 +69,18 @@ Measured on a release build, ten repositories tracked:
 | Portable exe | **12.2 MB** |
 | Installer | **6.6 MB** |
 | Cold start to window | **~2.2 s** |
-| Memory, idle | **~420 MB** working set across 7 processes (~360 MB private) |
+| Memory, idle | **~390 MB** working set across 7 processes |
 
 That memory figure deserves a caveat, because it is the one thing about this
-stack that is routinely undersold: the 12 MB binary is real, but WebView2 is
-Chromium, and it starts six processes like any browser tab would. The small
-binary buys disk space and download size, not RAM. If that matters more than
-everything else here, a native UI toolkit is the honest answer.
+stack that is routinely undersold: the 12 MB binary is real, but WebView2 *is*
+Chromium, and it starts a browser, GPU, renderer, crashpad and two utility
+processes whatever the page is. GitDeck turns off what it does not need — the
+GPU process, a large V8 heap, background networking — which is worth about
+20 MB. The rest is the runtime's floor.
+
+**The small binary buys disk space and download size, not RAM.** If memory
+matters more than anything else here, a native UI toolkit is the honest answer,
+and that would be a rewrite rather than a setting.
 
 ---
 
