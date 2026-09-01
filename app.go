@@ -2,26 +2,301 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+
+	"gitdeck/internal/gitx"
+	"gitdeck/internal/store"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App struct
+// App is the bound API surface. Every method here is callable from the
+// frontend; nothing else is.
 type App struct {
-	ctx context.Context
+	ctx   context.Context
+	store *store.Store
+	// storeErr is surfaced to the UI rather than crashing at startup.
+	storeErr string
 }
 
-// NewApp creates a new App application struct
+// RepoView is one row of the repo list: the tracked entry, its status, and any
+// linked worktrees rendered as children.
+type RepoView struct {
+	Path      string        `json:"path"`
+	Name      string        `json:"name"`
+	Pinned    bool          `json:"pinned"`
+	Status    gitx.Status   `json:"status"`
+	Worktrees []gitx.Status `json:"worktrees"`
+}
+
+// Env reports which external tools are available, so the UI can explain a
+// missing dependency instead of failing mysteriously.
+type Env struct {
+	GitFound   bool   `json:"gitFound"`
+	GitVersion string `json:"gitVersion"`
+	StoreFile  string `json:"storeFile"`
+	StoreError string `json:"storeError"`
+}
+
 func NewApp() *App {
-	return &App{}
+	a := &App{}
+	s, err := store.New()
+	if err != nil {
+		a.storeErr = err.Error()
+		return a
+	}
+	a.store = s
+	return a
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
-// Greet returns a greeting for the given name
-func (a *App) Greet(name string) string {
-	return fmt.Sprintf("Hello %s, It's show time!", name)
+// context returns a usable context even before startup has run.
+func (a *App) context() context.Context {
+	if a.ctx != nil {
+		return a.ctx
+	}
+	return context.Background()
+}
+
+var errNoStore = errors.New("settings file could not be opened; check %APPDATA%\\GitDeck")
+
+// GetEnv reports the availability of the tools the app shells out to.
+func (a *App) GetEnv() Env {
+	e := Env{StoreError: a.storeErr}
+	if a.store != nil {
+		e.StoreFile = a.store.File()
+	}
+	if v := gitx.Out(a.context(), "", "--version"); v != "" {
+		e.GitFound = true
+		e.GitVersion = strings.TrimPrefix(v, "git version ")
+	}
+	return e
+}
+
+// ListRepos returns every tracked repo with fresh status. Repos are read
+// concurrently: ten repos on a cold cache is otherwise a visible stall.
+func (a *App) ListRepos() []RepoView {
+	if a.store == nil {
+		return nil
+	}
+	entries := a.store.List()
+	views := make([]RepoView, len(entries))
+
+	var wg sync.WaitGroup
+	// Bound concurrency: spawning one git per repo is fine, spawning fifty
+	// at once on a laptop is not.
+	sem := make(chan struct{}, 12)
+
+	for i, e := range entries {
+		wg.Add(1)
+		go func(i int, e store.Entry) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			views[i] = a.buildView(e)
+		}(i, e)
+	}
+	wg.Wait()
+
+	// Pinned first, then the user's stored order.
+	sort.SliceStable(views, func(i, j int) bool {
+		return views[i].Pinned && !views[j].Pinned
+	})
+	return views
+}
+
+func (a *App) buildView(e store.Entry) RepoView {
+	ctx := a.context()
+	v := RepoView{Path: e.Path, Name: e.Name, Pinned: e.Pinned}
+
+	if _, err := os.Stat(e.Path); err != nil {
+		v.Status = gitx.Status{Path: e.Path, Name: e.Name, Error: "folder is missing"}
+		return v
+	}
+
+	v.Status = gitx.GetStatus(ctx, e.Path)
+	if v.Status.Name != "" {
+		v.Name = v.Status.Name
+	}
+
+	for _, wt := range gitx.ListWorktrees(ctx, e.Path) {
+		if wt.IsMain || sameDir(wt.Path, e.Path) {
+			continue
+		}
+		if _, err := os.Stat(wt.Path); err != nil {
+			continue
+		}
+		v.Worktrees = append(v.Worktrees, gitx.GetStatus(ctx, wt.Path))
+	}
+	return v
+}
+
+// GetRepo returns fresh status for a single repo, for targeted refreshes.
+func (a *App) GetRepo(path string) RepoView {
+	return a.buildView(store.Entry{Path: path, Name: filepath.Base(path)})
+}
+
+// ChooseFolder opens the native folder picker and returns the chosen path, or
+// "" if the user cancelled.
+func (a *App) ChooseFolder(title string) (string, error) {
+	if title == "" {
+		title = "Select a folder"
+	}
+	return runtime.OpenDirectoryDialog(a.context(), runtime.OpenDialogOptions{
+		Title: title,
+	})
+}
+
+// AddRepo tracks the repo at path. It rejects anything that is not a git
+// working tree, and silently succeeds if the repo is already tracked.
+func (a *App) AddRepo(path string) error {
+	if a.store == nil {
+		return errNoStore
+	}
+	if path == "" {
+		return errors.New("no folder selected")
+	}
+	ctx := a.context()
+	if !gitx.IsRepo(ctx, path) {
+		return errors.New(filepath.Base(path) + " is not a git repository")
+	}
+	root := gitx.Root(ctx, path)
+	if root == "" {
+		root = path
+	}
+	return a.store.Add(root, filepath.Base(root))
+}
+
+// AddRepos tracks many paths at once, returning the paths that failed.
+func (a *App) AddRepos(paths []string) []string {
+	var failed []string
+	for _, p := range paths {
+		if err := a.AddRepo(p); err != nil {
+			failed = append(failed, p+": "+err.Error())
+		}
+	}
+	return failed
+}
+
+// RemoveRepo untracks a repo. It never deletes anything from disk.
+func (a *App) RemoveRepo(path string) error {
+	if a.store == nil {
+		return errNoStore
+	}
+	return a.store.Remove(path)
+}
+
+// SetPinned pins or unpins a repo.
+func (a *App) SetPinned(path string, pinned bool) error {
+	if a.store == nil {
+		return errNoStore
+	}
+	return a.store.SetPinned(path, pinned)
+}
+
+// Reorder persists a new repo ordering.
+func (a *App) Reorder(paths []string) error {
+	if a.store == nil {
+		return errNoStore
+	}
+	return a.store.Reorder(paths)
+}
+
+// ScanResult is one candidate from a folder scan.
+type ScanResult struct {
+	Path    string `json:"path"`
+	Name    string `json:"name"`
+	Branch  string `json:"branch"`
+	Tracked bool   `json:"tracked"`
+}
+
+// ScanFolder finds every git repo under root and reports which are already
+// tracked, so the UI can preselect only the new ones.
+func (a *App) ScanFolder(root string, maxDepth int) []ScanResult {
+	if root == "" {
+		return nil
+	}
+	ctx := a.context()
+	found := gitx.Scan(ctx, root, maxDepth)
+
+	results := make([]ScanResult, len(found))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 12)
+
+	for i, f := range found {
+		wg.Add(1)
+		go func(i int, f gitx.Found) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			r := ScanResult{Path: f.Path, Name: f.Name}
+			if a.store != nil {
+				r.Tracked = a.store.Has(f.Path)
+			}
+			r.Branch = gitx.Out(ctx, f.Path, "rev-parse", "--abbrev-ref", "HEAD")
+			results[i] = r
+		}(i, f)
+	}
+	wg.Wait()
+	return results
+}
+
+// GetSettings returns the persisted settings.
+func (a *App) GetSettings() store.Settings {
+	if a.store == nil {
+		return store.Settings{AutoFetchMinutes: 5, AutoFetchEnabled: true}
+	}
+	return a.store.Settings()
+}
+
+// SaveSettings persists the settings.
+func (a *App) SaveSettings(s store.Settings) error {
+	if a.store == nil {
+		return errNoStore
+	}
+	return a.store.SaveSettings(s)
+}
+
+// OpenIn launches an external tool against a repo path. Anything not in the
+// allow-list is refused rather than passed to the shell.
+func (a *App) OpenIn(target, path string) error {
+	if path == "" {
+		return errors.New("no path")
+	}
+	switch target {
+	case "explorer":
+		return exec.Command("explorer", path).Start()
+	case "vscode":
+		c := exec.Command("cmd", "/c", "code", path)
+		return c.Start()
+	case "terminal":
+		c := exec.Command("cmd", "/c", "start", "", "wt", "-d", path)
+		if err := c.Start(); err != nil {
+			return exec.Command("cmd", "/c", "start", "", "powershell", "-NoExit", "-Command", "Set-Location -LiteralPath '"+path+"'").Start()
+		}
+		return nil
+	default:
+		return errors.New("unknown target: " + target)
+	}
+}
+
+// OpenURL opens a link in the user's default browser.
+func (a *App) OpenURL(url string) {
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		runtime.BrowserOpenURL(a.context(), url)
+	}
+}
+
+func sameDir(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }

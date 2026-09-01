@@ -1,28 +1,225 @@
-import {useState} from 'react';
-import logo from './assets/images/logo-universal.png';
-import './App.css';
-import {Greet} from "../wailsjs/go/main/App";
+import { useEffect, useMemo } from 'react'
+import {
+  FolderPlus,
+  FolderSearch,
+  GitBranch,
+  RefreshCw,
+  Search,
+  TriangleAlert,
+} from 'lucide-react'
+import { RepoRow } from './components/RepoRow'
+import { ScanDialog } from './components/ScanDialog'
+import { TitleBar } from './components/TitleBar'
+import { Toasts } from './components/Toasts'
+import { useRepos } from './store/repos'
 
-function App() {
-    const [resultText, setResultText] = useState("Please enter your name below 👇");
-    const [name, setName] = useState('');
-    const updateName = (e: any) => setName(e.target.value);
-    const updateResultText = (result: string) => setResultText(result);
+export default function App() {
+  const init = useRepos((s) => s.init)
+  const repos = useRepos((s) => s.repos)
+  const env = useRepos((s) => s.env)
+  const loading = useRepos((s) => s.loading)
+  const query = useRepos((s) => s.query)
+  const setQuery = useRepos((s) => s.setQuery)
+  const refresh = useRepos((s) => s.refresh)
+  const addRepo = useRepos((s) => s.addRepo)
+  const startScan = useRepos((s) => s.startScan)
 
-    function greet() {
-        Greet(name).then(updateResultText);
-    }
+  useEffect(() => {
+    init()
+  }, [init])
 
-    return (
-        <div id="App">
-            <img src={logo} id="logo" alt="logo"/>
-            <div id="result" className="result">{resultText}</div>
-            <div id="input" className="input-box">
-                <input id="name" className="input" onChange={updateName} autoComplete="off" name="input" type="text"/>
-                <button className="btn" onClick={greet}>Greet</button>
-            </div>
-        </div>
+  // Refresh when the window regains focus: the user has almost certainly just
+  // been running git in a terminal.
+  useEffect(() => {
+    const onFocus = () => refresh()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return repos
+    return repos.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.path.toLowerCase().includes(q) ||
+        r.status.branch?.toLowerCase().includes(q),
     )
+  }, [repos, query])
+
+  const totals = useMemo(() => {
+    let ahead = 0
+    let dirty = 0
+    for (const r of repos) {
+      ahead += r.status.ahead || 0
+      if (r.status.staged + r.status.unstaged + r.status.untracked > 0) dirty++
+    }
+    return { ahead, dirty }
+  }, [repos])
+
+  return (
+    <div className="flex h-full flex-col bg-surface text-ink">
+      <TitleBar
+        right={
+          <span className="text-[11.5px] text-ink-faint">
+            {repos.length} repositor{repos.length === 1 ? 'y' : 'ies'}
+          </span>
+        }
+      />
+
+      {env && !env.gitFound && (
+        <Banner>
+          <TriangleAlert size={14} className="shrink-0 text-conflict" />
+          <span>
+            <b>git was not found on your PATH.</b> GitDeck shells out to git for everything, so
+            nothing will work until it is installed.
+          </span>
+        </Banner>
+      )}
+      {env?.storeError && (
+        <Banner>
+          <TriangleAlert size={14} className="shrink-0 text-behind" />
+          <span>Settings could not be saved: {env.storeError}</span>
+        </Banner>
+      )}
+
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+        <div className="relative flex-1">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint"
+          />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by name, path or branch…"
+            className="selectable w-full rounded-md border border-line bg-[rgba(255,255,255,0.04)] py-1.5 pl-8 pr-3 text-[12.5px] text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
+          />
+        </div>
+
+        <ToolbarButton onClick={addRepo} icon={<FolderPlus size={13} />} label="Add repo" />
+        <ToolbarButton
+          onClick={startScan}
+          icon={<FolderSearch size={13} />}
+          label="Scan folder"
+        />
+        <ToolbarButton
+          onClick={refresh}
+          icon={<RefreshCw size={13} className={loading ? 'animate-spin-slow' : ''} />}
+          label="Refresh"
+        />
+      </div>
+
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        {loading && repos.length === 0 ? (
+          <LoadingState />
+        ) : repos.length === 0 ? (
+          <EmptyState onAdd={addRepo} onScan={startScan} />
+        ) : filtered.length === 0 ? (
+          <div className="px-4 py-16 text-center text-[12.5px] text-ink-faint">
+            No repository matches “{query}”.
+          </div>
+        ) : (
+          filtered.map((r) => <RepoRow key={r.path} repo={r} />)
+        )}
+      </main>
+
+      <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line px-3 text-[11px] text-ink-faint">
+        <span>{totals.dirty} with changes</span>
+        <span>{totals.ahead} commits to push</span>
+        {env?.gitVersion && <span className="ml-auto font-mono">git {env.gitVersion}</span>}
+      </footer>
+
+      <ScanDialog />
+      <Toasts />
+    </div>
+  )
 }
 
-export default App
+function Banner({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-[rgba(242,96,122,0.08)] px-3 py-2 text-[12px] text-ink-soft">
+      {children}
+    </div>
+  )
+}
+
+function ToolbarButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+/** Skeleton rows: reading N repos costs a few git spawns each, so the first
+ *  paint after launch is never instant. */
+function LoadingState() {
+  return (
+    <div className="animate-fade-in">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 border-b border-line px-4 py-3">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[rgba(255,255,255,0.12)]" />
+          <div className="flex-1 space-y-1.5">
+            <div
+              className="h-2.5 rounded bg-[rgba(255,255,255,0.08)]"
+              style={{ width: `${120 + ((i * 37) % 90)}px` }}
+            />
+            <div
+              className="h-2 rounded bg-[rgba(255,255,255,0.05)]"
+              style={{ width: `${200 + ((i * 53) % 140)}px` }}
+            />
+          </div>
+          <div className="h-5 w-20 rounded-md bg-[rgba(255,255,255,0.06)]" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EmptyState({ onAdd, onScan }: { onAdd: () => void; onScan: () => void }) {
+  return (
+    <div className="grid h-full place-items-center px-6 py-16">
+      <div className="max-w-[380px] text-center">
+        <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-accent-dim">
+          <GitBranch size={20} className="text-accent" />
+        </div>
+        <h2 className="mb-1.5 text-[15px] font-semibold">No repositories yet</h2>
+        <p className="mb-5 text-[12.5px] leading-relaxed text-ink-faint">
+          Add a single repository, or point GitDeck at a folder like{' '}
+          <code className="font-mono text-ink-soft">C:\Users\you\Projects</code> and it will find
+          every repo underneath.
+        </p>
+        <div className="flex justify-center gap-2">
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12.5px] font-medium text-[#0b0e14] hover:opacity-90"
+          >
+            <FolderPlus size={13} />
+            Add repository
+          </button>
+          <button
+            onClick={onScan}
+            className="flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[12.5px] text-ink-soft hover:border-line-strong hover:text-ink"
+          >
+            <FolderSearch size={13} />
+            Scan a folder
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

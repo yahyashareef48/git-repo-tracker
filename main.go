@@ -6,25 +6,37 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	// Create an instance of the app structure
 	app := NewApp()
 
-	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "gitdeck",
-		Width:  1024,
-		Height: 768,
+		Title:     "GitDeck",
+		Width:     1180,
+		Height:    780,
+		MinWidth:  880,
+		MinHeight: 560,
+		// The titlebar is drawn in the frontend so it can carry the repo
+		// count, the GitHub status dot and the window controls.
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
+		// Mica needs a transparent webview and window to show through.
+		BackgroundColour: &options.RGBA{R: 12, G: 14, B: 20, A: 1},
+		Windows: &windows.Options{
+			WebviewIsTransparent: true,
+			WindowIsTranslucent:  true,
+			BackdropType:         windows.Mica,
+			Theme:                windows.Dark,
+			DisableWindowIcon:    false,
+		},
+		OnStartup: app.startup,
 		Bind: []interface{}{
 			app,
 		},

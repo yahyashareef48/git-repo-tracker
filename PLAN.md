@@ -124,7 +124,7 @@ one bound-method call returning a Go struct that serialises to
 | Pull | `git pull --ff-only`, falling back to a rebase/merge prompt |
 | Push | `git push`, auto `-u origin <branch>` when there is no upstream |
 | Sync | fetch → pull → push |
-| Pull from main | `git fetch origin main && git merge origin/main` (rebase configurable) |
+| Pull from main | `git fetch origin main && git merge origin/main` (merge — confirmed decision) |
 | Publish branch | `git push -u origin HEAD` |
 | Checkout / create branch | branch picker with search |
 | Stage / unstage / discard | per file and all |
@@ -217,7 +217,7 @@ Phases 0–3 already give a genuinely usable app. Each phase ends in a commit an
 1. **Tray is third-party** — Wails v2 has no built-in tray (v3 does). `energye/systray` is pure Go
    on Windows, but it is the one dependency most likely to need attention. Phase 6 proves it early
    enough to swap if needed. Global hotkeys are explicitly out of scope.
-2. **Pull-from-main default** — merge or rebase? The plan assumes **merge**, configurable per repo.
+2. **Pull-from-main default** — merge or rebase? **Decided: merge.** Rebase may be added later as a per-repo option.
 3. **Credential prompts** — a push needing credentials can block invisibly. Mitigation: run every
    remote op with `GIT_TERMINAL_PROMPT=0` and a 30 s timeout, then surface a clear
    "authentication required" error instead of hanging forever.
