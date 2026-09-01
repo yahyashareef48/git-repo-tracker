@@ -200,9 +200,25 @@ func resolveDefaultBranch(ctx context.Context, dir, symref string) string {
 	return "main"
 }
 
+// firstLine picks the one line of stderr worth showing in a toast. git leads
+// with several "hint:" lines of advice before stating what actually went
+// wrong, so the diagnosis is preferred over the advice.
 func firstLine(s string) string {
-	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
-		return s[:i]
+	lines := Lines(s)
+	if len(lines) == 0 {
+		return ""
 	}
-	return s
+	for _, prefix := range []string{"fatal:", "error:"} {
+		for _, l := range lines {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(l)), prefix) {
+				return strings.TrimSpace(l)
+			}
+		}
+	}
+	for _, l := range lines {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(l)), "hint:") {
+			return strings.TrimSpace(l)
+		}
+	}
+	return strings.TrimSpace(lines[0])
 }

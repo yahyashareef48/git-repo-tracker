@@ -1,6 +1,12 @@
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronRight,
+  CloudUpload,
+  Code2,
+  DownloadCloud,
   FolderOpen,
+  GitMerge,
   MoreHorizontal,
   Pin,
   PinOff,
@@ -14,6 +20,7 @@ import type { gitx } from '../../wailsjs/go/models'
 import { useRepos, type RepoView } from '../store/repos'
 import { BranchPill, Counters, StatusDot } from './Badges'
 import { Menu } from './Menu'
+import { SyncButton } from './SyncButton'
 
 export function RepoRow({ repo }: { repo: RepoView }) {
   const expanded = useRepos((s) => s.expanded.has(repo.path))
@@ -22,6 +29,7 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const refreshOne = useRepos((s) => s.refreshOne)
   const removeRepo = useRepos((s) => s.removeRepo)
   const togglePin = useRepos((s) => s.togglePin)
+  const runOp = useRepos((s) => s.runOp)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -90,9 +98,11 @@ export function RepoRow({ repo }: { repo: RepoView }) {
 
         {/* Actions must not trigger the row's expand/collapse. */}
         <div
-          className="flex shrink-0 items-center gap-0.5"
+          className="flex shrink-0 items-center gap-1"
           onClick={(e) => e.stopPropagation()}
         >
+          <SyncButton status={repo.status} path={repo.path} />
+
           <IconButton
             label="Refresh"
             onClick={() => refreshOne(repo.path)}
@@ -116,8 +126,40 @@ export function RepoRow({ repo }: { repo: RepoView }) {
             )}
             items={[
               {
+                label: 'Fetch',
+                icon: <DownloadCloud size={13} />,
+                onSelect: () => runOp(repo.path, 'fetch'),
+              },
+              {
+                label: 'Pull',
+                icon: <ArrowDown size={13} />,
+                onSelect: () => runOp(repo.path, 'pull'),
+              },
+              {
+                label: 'Push',
+                icon: <ArrowUp size={13} />,
+                onSelect: () => runOp(repo.path, 'push'),
+              },
+              {
+                label: 'Sync (fetch, pull, push)',
+                icon: <RefreshCw size={13} />,
+                onSelect: () => runOp(repo.path, 'sync'),
+              },
+              { kind: 'separator' },
+              {
+                label: `Pull from ${repo.status.defaultBranch || 'main'}`,
+                icon: <GitMerge size={13} />,
+                onSelect: () => runOp(repo.path, 'pull-from-main'),
+              },
+              {
+                label: 'Publish branch',
+                icon: <CloudUpload size={13} />,
+                onSelect: () => runOp(repo.path, 'publish'),
+              },
+              { kind: 'separator' },
+              {
                 label: 'Open in VS Code',
-                icon: <Terminal size={13} />,
+                icon: <Code2 size={13} />,
                 onSelect: () => open('vscode', repo.path),
               },
               {
@@ -189,10 +231,13 @@ function WorktreeRow({
       <Counters status={status} />
       <BranchPill status={status} />
 
-      <IconButton label="Reveal in Explorer" onClick={() => onOpen('explorer', status.path)}>
-        <FolderOpen size={13} />
-      </IconButton>
-      <span className="w-7" />
+      <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <SyncButton status={status} path={status.path} />
+        <IconButton label="Reveal in Explorer" onClick={() => onOpen('explorer', status.path)}>
+          <FolderOpen size={13} />
+        </IconButton>
+        <span className="w-7" />
+      </div>
     </div>
   )
 }

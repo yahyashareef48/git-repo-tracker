@@ -44,6 +44,11 @@ func Run(ctx context.Context, dir, name string, timeout time.Duration, args ...s
 		"GCM_INTERACTIVE=never",
 		"GIT_OPTIONAL_LOCKS=0",
 		"LC_ALL=C",
+		// A merge or rebase would otherwise launch the user's editor for a
+		// commit message and block forever with no window to type into.
+		// `true` exits 0 immediately, so git keeps its default message.
+		"GIT_EDITOR=true",
+		"GIT_SEQUENCE_EDITOR=true",
 	)
 	hideWindow(cmd)
 

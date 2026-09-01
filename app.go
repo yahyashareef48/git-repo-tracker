@@ -251,6 +251,46 @@ func (a *App) ScanFolder(root string, maxDepth int) []ScanResult {
 	return results
 }
 
+// RunOp performs one git operation against one repo and returns every command
+// it ran. A single entry point keeps the bound surface small and gives the log
+// drawer a uniform shape to render.
+//
+// Ops that can diverge are offered as separate names rather than a flag, so the
+// UI can present "merge instead" / "rebase instead" after a failed fast-forward
+// without inventing state.
+func (a *App) RunOp(op, path string) []gitx.OpResult {
+	ctx := a.context()
+	if path == "" {
+		return []gitx.OpResult{{Op: op, Error: "no repository", Kind: "generic"}}
+	}
+
+	rebaseMain := false
+	if a.store != nil {
+		rebaseMain = a.store.Settings().PullFromMainRebase
+	}
+
+	switch op {
+	case "fetch":
+		return []gitx.OpResult{gitx.Fetch(ctx, path)}
+	case "pull":
+		return []gitx.OpResult{gitx.Pull(ctx, path, gitx.PullFF)}
+	case "pull-merge":
+		return []gitx.OpResult{gitx.Pull(ctx, path, gitx.PullMerge)}
+	case "pull-rebase":
+		return []gitx.OpResult{gitx.Pull(ctx, path, gitx.PullRebase)}
+	case "push":
+		return []gitx.OpResult{gitx.Push(ctx, path)}
+	case "publish":
+		return []gitx.OpResult{gitx.PublishBranch(ctx, path)}
+	case "sync":
+		return gitx.Sync(ctx, path, gitx.PullFF)
+	case "pull-from-main":
+		return gitx.PullFromMain(ctx, path, rebaseMain)
+	default:
+		return []gitx.OpResult{{Op: op, Error: "unknown operation: " + op, Kind: "generic"}}
+	}
+}
+
 // GetSettings returns the persisted settings.
 func (a *App) GetSettings() store.Settings {
 	if a.store == nil {

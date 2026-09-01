@@ -7,20 +7,53 @@ import {
   GetRepo,
   ListRepos,
   RemoveRepo,
+  RunOp,
   ScanFolder,
   SetPinned,
 } from '../../wailsjs/go/main/App'
-import type { main } from '../../wailsjs/go/models'
+import type { gitx, main } from '../../wailsjs/go/models'
 
 export type RepoView = main.RepoView
 export type ScanResult = main.ScanResult
 export type Env = main.Env
+export type OpResult = gitx.OpResult
+
+/** Every git operation the app has run this session, newest last. */
+export type LogEntry = OpResult & { at: string; repoName: string }
+
+export type ToastAction = { label: string; run: () => void }
 
 export type Toast = {
   id: number
   kind: 'info' | 'error' | 'success'
   text: string
+  detail?: string
+  actions?: ToastAction[]
 }
+
+/** Op names understood by the Go RunOp binding. */
+export type Op =
+  | 'fetch'
+  | 'pull'
+  | 'pull-merge'
+  | 'pull-rebase'
+  | 'push'
+  | 'publish'
+  | 'sync'
+  | 'pull-from-main'
+
+const opLabels: Record<Op, string> = {
+  fetch: 'Fetch',
+  pull: 'Pull',
+  'pull-merge': 'Pull (merge)',
+  'pull-rebase': 'Pull (rebase)',
+  push: 'Push',
+  publish: 'Publish branch',
+  sync: 'Sync',
+  'pull-from-main': 'Pull from main',
+}
+
+export const opLabel = (op: Op) => opLabels[op] ?? op
 
 type ScanState = {
   root: string
@@ -38,6 +71,8 @@ type State = {
   busy: Set<string>
   toasts: Toast[]
   scan: ScanState
+  log: LogEntry[]
+  logOpen: boolean
 
   init: () => Promise<void>
   refresh: () => Promise<void>
@@ -48,13 +83,22 @@ type State = {
   removeRepo: (path: string) => Promise<void>
   togglePin: (path: string, pinned: boolean) => Promise<void>
 
+  runOp: (path: string, op: Op) => Promise<void>
+  runOpAll: (op: Op) => Promise<void>
+  toggleLog: () => void
+  clearLog: () => void
+
   startScan: () => Promise<void>
   toggleScanPick: (path: string) => void
   setAllScanPicks: (on: boolean) => void
   confirmScan: () => Promise<void>
   cancelScan: () => void
 
-  toast: (kind: Toast['kind'], text: string) => void
+  toast: (
+    kind: Toast['kind'],
+    text: string,
+    extra?: { detail?: string; actions?: ToastAction[] },
+  ) => void
   dismissToast: (id: number) => void
 }
 
@@ -76,6 +120,8 @@ export const useRepos = create<State>((set, get) => ({
   busy: new Set<string>(),
   toasts: [],
   scan: null,
+  log: [],
+  logOpen: false,
 
   async init() {
     try {
@@ -158,6 +204,69 @@ export const useRepos = create<State>((set, get) => ({
     }
   },
 
+  async runOp(path, op) {
+    const repo = get().repos.find((r) => r.path === path)
+    const repoName = repo?.name ?? path.split(/[\\/]/).pop() ?? path
+
+    set((s) => ({ busy: new Set(s.busy).add(path) }))
+    try {
+      const results = await RunOp(op, path)
+      const at = new Date().toLocaleTimeString()
+      set((s) => ({
+        // Cap the log: this is a session scratchpad, not an audit trail.
+        log: [...s.log, ...results.map((r) => ({ ...r, at, repoName }))].slice(-300),
+      }))
+
+      const failed = results.find((r) => !r.ok)
+      if (failed) {
+        get().toast('error', `${opLabel(op)} failed — ${repoName}: ${failed.error}`, {
+          detail: failed.hint,
+          // A diverged branch has exactly two sensible resolutions; offer both
+          // rather than making the user find them in a menu.
+          actions:
+            failed.kind === 'diverged'
+              ? [
+                  { label: 'Merge', run: () => get().runOp(path, 'pull-merge') },
+                  { label: 'Rebase', run: () => get().runOp(path, 'pull-rebase') },
+                ]
+              : undefined,
+        })
+      } else {
+        const summary = results
+          .map((r) => r.stdout.split('\n').pop()?.trim())
+          .filter(Boolean)
+          .pop()
+        get().toast('success', `${opLabel(op)} — ${repoName}`, { detail: summary })
+      }
+    } catch (e) {
+      get().toast('error', message(e))
+    } finally {
+      set((s) => {
+        const busy = new Set(s.busy)
+        busy.delete(path)
+        return { busy }
+      })
+      await get().refreshOne(path)
+    }
+  },
+
+  async runOpAll(op) {
+    const paths = get().repos.map((r) => r.path)
+    // Sequential on purpose: parallel network git across every repo is a good
+    // way to trip rate limits and produce an unreadable log.
+    for (const p of paths) {
+      await get().runOp(p, op)
+    }
+  },
+
+  toggleLog() {
+    set((s) => ({ logOpen: !s.logOpen }))
+  },
+
+  clearLog() {
+    set({ log: [] })
+  },
+
   async startScan() {
     try {
       const root = await ChooseFolder('Select a folder to scan for repositories')
@@ -216,10 +325,14 @@ export const useRepos = create<State>((set, get) => ({
     set({ scan: null })
   },
 
-  toast(kind, text) {
+  toast(kind, text, extra) {
     const id = ++toastSeq
-    set((s) => ({ toasts: [...s.toasts, { id, kind, text }] }))
-    setTimeout(() => get().dismissToast(id), kind === 'error' ? 6000 : 3000)
+    set((s) => ({ toasts: [...s.toasts, { id, kind, text, ...extra }] }))
+    // Errors stay long enough to read the hint; ones offering a choice stay
+    // until the user makes it.
+    if (!extra?.actions) {
+      setTimeout(() => get().dismissToast(id), kind === 'error' ? 8000 : 2500)
+    }
   },
 
   dismissToast(id) {

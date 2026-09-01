@@ -23,9 +23,30 @@ export function Toasts() {
             className="animate-fade-in pointer-events-auto flex max-w-[380px] items-start gap-2.5 rounded-lg border border-line-strong bg-surface-raised px-3 py-2.5 shadow-xl backdrop-blur-xl"
           >
             <Icon size={14} className={'mt-[1px] shrink-0 ' + cls} />
-            <span className="selectable flex-1 text-[12.5px] leading-snug text-ink-soft">
-              {t.text}
-            </span>
+            <div className="min-w-0 flex-1">
+              <div className="selectable text-[12.5px] leading-snug text-ink-soft">{t.text}</div>
+              {t.detail && (
+                <div className="selectable mt-1 font-mono text-[11px] leading-snug text-ink-faint">
+                  {t.detail}
+                </div>
+              )}
+              {t.actions && t.actions.length > 0 && (
+                <div className="mt-2 flex gap-1.5">
+                  {t.actions.map((a) => (
+                    <button
+                      key={a.label}
+                      onClick={() => {
+                        dismiss(t.id)
+                        a.run()
+                      }}
+                      className="rounded border border-line-strong px-2 py-1 text-[11.5px] text-ink-soft transition-colors hover:bg-surface-hover hover:text-ink"
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => dismiss(t.id)}
               aria-label="Dismiss"

@@ -1,5 +1,33 @@
 export namespace gitx {
 	
+	export class OpResult {
+	    ok: boolean;
+	    op: string;
+	    repo: string;
+	    command: string;
+	    stdout: string;
+	    stderr: string;
+	    error: string;
+	    kind: string;
+	    hint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.op = source["op"];
+	        this.repo = source["repo"];
+	        this.command = source["command"];
+	        this.stdout = source["stdout"];
+	        this.stderr = source["stderr"];
+	        this.error = source["error"];
+	        this.kind = source["kind"];
+	        this.hint = source["hint"];
+	    }
+	}
 	export class Status {
 	    path: string;
 	    name: string;

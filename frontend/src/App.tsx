@@ -1,12 +1,15 @@
 import { useEffect, useMemo } from 'react'
 import {
+  DownloadCloud,
   FolderPlus,
   FolderSearch,
   GitBranch,
   RefreshCw,
   Search,
+  Terminal,
   TriangleAlert,
 } from 'lucide-react'
+import { LogDrawer } from './components/LogDrawer'
 import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
 import { TitleBar } from './components/TitleBar'
@@ -23,6 +26,11 @@ export default function App() {
   const refresh = useRepos((s) => s.refresh)
   const addRepo = useRepos((s) => s.addRepo)
   const startScan = useRepos((s) => s.startScan)
+  const runOpAll = useRepos((s) => s.runOpAll)
+  const toggleLog = useRepos((s) => s.toggleLog)
+  const logCount = useRepos((s) => s.log.length)
+  const logFailures = useRepos((s) => s.log.filter((e) => !e.ok).length)
+  const busyCount = useRepos((s) => s.busy.size)
 
   useEffect(() => {
     init()
@@ -104,6 +112,11 @@ export default function App() {
           label="Scan folder"
         />
         <ToolbarButton
+          onClick={() => runOpAll('fetch')}
+          icon={<DownloadCloud size={13} className={busyCount > 0 ? 'animate-spin-slow' : ''} />}
+          label="Fetch all"
+        />
+        <ToolbarButton
           onClick={refresh}
           icon={<RefreshCw size={13} className={loading ? 'animate-spin-slow' : ''} />}
           label="Refresh"
@@ -124,9 +137,25 @@ export default function App() {
         )}
       </main>
 
+      <LogDrawer />
+
       <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line px-3 text-[11px] text-ink-faint">
         <span>{totals.dirty} with changes</span>
         <span>{totals.ahead} commits to push</span>
+        <button
+          onClick={toggleLog}
+          title="Show the raw output of every git command GitDeck has run"
+          className="flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-surface-hover hover:text-ink"
+        >
+          <Terminal size={11} />
+          Git output
+          {logCount > 0 && (
+            <span className={logFailures > 0 ? 'text-conflict' : 'text-ink-faint'}>
+              ({logCount}
+              {logFailures > 0 ? `, ${logFailures} failed` : ''})
+            </span>
+          )}
+        </button>
         {env?.gitVersion && <span className="ml-auto font-mono">git {env.gitVersion}</span>}
       </footer>
 
