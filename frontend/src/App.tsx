@@ -3,11 +3,14 @@ import {
   DownloadCloud,
   FolderPlus,
   FolderSearch,
+  FolderTree,
   GitBranch,
+  Plus,
   RefreshCw,
   Search,
   Terminal,
   TriangleAlert,
+  X,
 } from 'lucide-react'
 import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
@@ -15,7 +18,7 @@ import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
 import { TitleBar } from './components/TitleBar'
 import { Toasts } from './components/Toasts'
-import { filterRepos, UNGROUPED, useRepos, type RepoView } from './store/repos'
+import { filterRepos, SELECTED, UNGROUPED, useRepos, type RepoView } from './store/repos'
 
 export default function App() {
   const init = useRepos((s) => s.init)
@@ -35,6 +38,10 @@ export default function App() {
   const groups = useRepos((s) => s.groups)
   const groupFilter = useRepos((s) => s.groupFilter)
   const setGroupFilter = useRepos((s) => s.setGroupFilter)
+  const selected = useRepos((s) => s.selected)
+  const selectVisible = useRepos((s) => s.selectVisible)
+  const clearSelection = useRepos((s) => s.clearSelection)
+  const openGroupDialog = useRepos((s) => s.openGroupDialog)
 
   useEffect(() => {
     init()
@@ -49,8 +56,8 @@ export default function App() {
   }, [refresh])
 
   const filtered = useMemo(
-    () => filterRepos(repos, groupFilter, query),
-    [repos, groupFilter, query],
+    () => filterRepos(repos, groupFilter, query, selected),
+    [repos, groupFilter, query, selected],
   )
 
   // With no group filter chosen, repos are shown under their group headings so
@@ -169,6 +176,65 @@ export default function App() {
               onClick={() => setGroupFilter(UNGROUPED)}
             />
           )}
+          {selected.size > 0 && (
+            <GroupChip
+              label="Selected"
+              count={selected.size}
+              active={groupFilter === SELECTED}
+              onClick={() => setGroupFilter(groupFilter === SELECTED ? '' : SELECTED)}
+            />
+          )}
+          <NewGroupButton />
+        </div>
+      )}
+
+      {groups.length === 0 && repos.length > 0 && (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1.5">
+          <NewGroupButton />
+          <span className="text-[11px] text-ink-faint">
+            Tick repositories on the left, then group them.
+          </span>
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-accent-dim px-3 py-1.5 text-[11.5px]">
+          <span className="font-medium text-accent">{selected.size} selected</span>
+          <button
+            onClick={() => selectVisible(filtered.map((r) => r.path))}
+            className="rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            {filtered.every((r) => selected.has(r.path)) ? 'Deselect visible' : 'Select visible'}
+          </button>
+          <span className="text-ink-faint">·</span>
+          <button
+            onClick={() => openGroupDialog([...selected])}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            <FolderTree size={11} />
+            Move to group
+          </button>
+          <button
+            onClick={() => runOpAll('fetch')}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            <DownloadCloud size={11} />
+            Fetch
+          </button>
+          <button
+            onClick={() => runOpAll('sync')}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            <RefreshCw size={11} />
+            Sync
+          </button>
+          <button
+            onClick={clearSelection}
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+          >
+            <X size={11} />
+            Clear
+          </button>
         </div>
       )}
 
@@ -224,6 +290,31 @@ export default function App() {
       <GroupDialog />
       <Toasts />
     </div>
+  )
+}
+
+/** Creating a group is just naming one, so this opens the same dialog the
+ *  per-repo menu does — pointed at whatever is currently ticked. */
+function NewGroupButton() {
+  const selected = useRepos((s) => s.selected)
+  const openGroupDialog = useRepos((s) => s.openGroupDialog)
+  const toast = useRepos((s) => s.toast)
+
+  return (
+    <button
+      onClick={() => {
+        if (selected.size === 0) {
+          toast('info', 'Tick the repositories you want, then press New group.')
+          return
+        }
+        openGroupDialog([...selected])
+      }}
+      title="Put the selected repositories into a new or existing group"
+      className="flex items-center gap-1 rounded-full border border-dashed border-line-strong px-2.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:border-accent hover:text-accent"
+    >
+      <Plus size={11} />
+      New group
+    </button>
   )
 }
 

@@ -60,12 +60,22 @@ export const opLabel = (op: Op) => opLabels[op] ?? op
 /** Sentinel group filter meaning "only repos that have no group". */
 export const UNGROUPED = '__ungrouped__'
 
+/** Sentinel group filter meaning "only the repos I ticked". */
+export const SELECTED = '__selected__'
+
 /** The repos currently on screen, after the group filter and search box. */
-export function filterRepos(repos: RepoView[], groupFilter: string, query: string) {
+export function filterRepos(
+  repos: RepoView[],
+  groupFilter: string,
+  query: string,
+  selected: Set<string> = new Set(),
+) {
   const q = query.trim().toLowerCase()
   return repos.filter((r) => {
+    if (groupFilter === SELECTED && !selected.has(r.path)) return false
     if (groupFilter === UNGROUPED && r.group) return false
-    if (groupFilter && groupFilter !== UNGROUPED && r.group !== groupFilter) return false
+    if (groupFilter && groupFilter !== UNGROUPED && groupFilter !== SELECTED && r.group !== groupFilter)
+      return false
     if (!q) return true
     return (
       r.name.toLowerCase().includes(q) ||
@@ -96,8 +106,10 @@ type State = {
   groups: string[]
   /** '' = every repo, UNGROUPED = only repos with no group, else that group. */
   groupFilter: string
-  /** Path of the repo whose "move to group" dialog is open. */
-  groupTarget: string | null
+  /** Repos whose "move to group" dialog is open; empty when closed. */
+  groupTargets: string[]
+  /** Repos the user has ticked, for filtering and bulk actions. */
+  selected: Set<string>
 
   init: () => Promise<void>
   refresh: () => Promise<void>
@@ -109,9 +121,13 @@ type State = {
   togglePin: (path: string, pinned: boolean) => Promise<void>
 
   setGroupFilter: (g: string) => void
-  openGroupDialog: (path: string) => void
+  openGroupDialog: (paths: string[]) => void
   closeGroupDialog: () => void
-  setGroup: (path: string, group: string) => Promise<void>
+  setGroup: (paths: string[], group: string) => Promise<void>
+
+  toggleSelected: (path: string) => void
+  selectVisible: (paths: string[]) => void
+  clearSelection: () => void
 
   runOp: (path: string, op: Op) => Promise<void>
   runOpAll: (op: Op) => Promise<void>
@@ -154,7 +170,8 @@ export const useRepos = create<State>((set, get) => ({
   logOpen: false,
   groups: [],
   groupFilter: '',
-  groupTarget: null,
+  groupTargets: [],
+  selected: new Set<string>(),
 
   async init() {
     try {
@@ -242,23 +259,51 @@ export const useRepos = create<State>((set, get) => ({
     set({ groupFilter: g })
   },
 
-  openGroupDialog(path) {
-    set({ groupTarget: path })
+  openGroupDialog(paths) {
+    set({ groupTargets: paths })
   },
 
   closeGroupDialog() {
-    set({ groupTarget: null })
+    set({ groupTargets: [] })
   },
 
-  async setGroup(path, group) {
-    set({ groupTarget: null })
+  async setGroup(paths, group) {
+    set({ groupTargets: [] })
     try {
-      await SetGroup(path, group)
+      for (const p of paths) await SetGroup(p, group)
       await get().refresh()
-      get().toast('success', group ? `Moved to “${group}”` : 'Removed from its group')
+      const what = paths.length === 1 ? '1 repository' : `${paths.length} repositories`
+      get().toast('success', group ? `Moved ${what} to “${group}”` : `Ungrouped ${what}`)
     } catch (e) {
       get().toast('error', message(e))
     }
+  },
+
+  toggleSelected(path) {
+    set((s) => {
+      const next = new Set(s.selected)
+      next.has(path) ? next.delete(path) : next.add(path)
+      // Filtering to a now-empty selection would show an empty list with no
+      // obvious way back, so fall out of the filter with the last tick.
+      return next.size === 0 && s.groupFilter === SELECTED
+        ? { selected: next, groupFilter: '' }
+        : { selected: next }
+    })
+  },
+
+  selectVisible(paths) {
+    set((s) => {
+      const next = new Set(s.selected)
+      const allOn = paths.every((p) => next.has(p))
+      for (const p of paths) (allOn ? next.delete(p) : next.add(p))
+      return allOn && s.groupFilter === SELECTED
+        ? { selected: next, groupFilter: '' }
+        : { selected: next }
+    })
+  },
+
+  clearSelection() {
+    set((s) => (s.groupFilter === SELECTED ? { selected: new Set<string>(), groupFilter: '' } : { selected: new Set<string>() }))
   },
 
   async runOp(path, op) {
@@ -310,8 +355,8 @@ export const useRepos = create<State>((set, get) => ({
   async runOpAll(op) {
     // "all" means what the user can currently see: filtering to a group and
     // hitting Fetch all should not quietly fetch every other repo too.
-    const { repos, groupFilter, query } = get()
-    const paths = filterRepos(repos, groupFilter, query).map((r) => r.path)
+    const { repos, groupFilter, query, selected } = get()
+    const paths = filterRepos(repos, groupFilter, query, selected).map((r) => r.path)
     // Sequential on purpose: parallel network git across every repo is a good
     // way to trip rate limits and produce an unreadable log.
     for (const p of paths) {

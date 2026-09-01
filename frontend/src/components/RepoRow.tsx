@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronRight,
   CloudUpload,
   Code2,
@@ -32,6 +33,9 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const togglePin = useRepos((s) => s.togglePin)
   const runOp = useRepos((s) => s.runOp)
   const openGroupDialog = useRepos((s) => s.openGroupDialog)
+  const selected = useRepos((s) => s.selected.has(repo.path))
+  const anySelected = useRepos((s) => s.selected.size > 0)
+  const toggleSelected = useRepos((s) => s.toggleSelected)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -97,7 +101,7 @@ export function RepoRow({ repo }: { repo: RepoView }) {
     {
       label: repo.group ? `Group: ${repo.group}` : 'Move to group…',
       icon: <FolderTree size={13} />,
-      onSelect: () => openGroupDialog(repo.path),
+      onSelect: () => openGroupDialog([repo.path]),
     },
     {
       label: repo.pinned ? 'Unpin' : 'Pin to top',
@@ -128,6 +132,26 @@ export function RepoRow({ repo }: { repo: RepoView }) {
           (hasChildren ? 'cursor-pointer' : '')
         }
       >
+        {/* Ticking rows is how you build an ad-hoc set: filter to it, or group
+            it in one go. Hidden until hovered so the list stays calm. */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleSelected(repo.path)
+          }}
+          aria-label={selected ? 'Deselect' : 'Select'}
+          title={selected ? 'Deselect' : 'Select'}
+          className={
+            'grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ' +
+            (selected
+              ? 'border-accent bg-accent text-[#0b0e14]'
+              : 'border-line-strong text-transparent hover:border-accent ') +
+            (selected || anySelected ? '' : ' opacity-0 group-hover:opacity-100')
+          }
+        >
+          {selected && <Check size={11} strokeWidth={3} />}
+        </button>
+
         <button
           onClick={() => hasChildren && toggleExpanded(repo.path)}
           className={
