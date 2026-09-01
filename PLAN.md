@@ -138,7 +138,7 @@ strip so one failure never hides the others.
 
 ### Diff and history
 - Changed-files list with A/M/D badges
-- Side-by-side or inline diff via Monaco — runs fine in WebView2
+- Unified diff rendered in-app (no Monaco: it would add megabytes to a 12 MB app for a read-only view)
 - Commit log for the current branch, 50 at a time, click through to the full diff
 
 ### GitHub connectivity (explicit requirement)
@@ -202,7 +202,7 @@ UI response:
 | **1** | ✅ Repo store, add/remove/scan, live status, worktree nesting, groups, multi-select |
 | **2** | ✅ Core ops: fetch, pull, push, sync, pull-from-main, with error surfacing |
 | **3** | ✅ GitHub connectivity probe, banner, disabled-state wiring |
-| **4** | Changes panel: stage / unstage / discard / commit / stash, plus Monaco diff |
+| **4** | ✅ Changes panel: stage / unstage / discard / commit / amend / stash, plus a built-in diff view |
 | **5** | Worktree tree, branch picker, history log |
 | **6** | Tray, autostart, bulk multi-repo ops |
 | **7** | Polish: Mica, animations, empty states, settings screen |

@@ -39,6 +39,86 @@ export namespace github {
 
 export namespace gitx {
 	
+	export class Change {
+	    path: string;
+	    orig: string;
+	    staged: boolean;
+	    kind: string;
+	    code: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Change(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.orig = source["orig"];
+	        this.staged = source["staged"];
+	        this.kind = source["kind"];
+	        this.code = source["code"];
+	    }
+	}
+	export class Changes {
+	    staged: Change[];
+	    unstaged: Change[];
+	    untracked: Change[];
+	    conflicted: Change[];
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Changes(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.staged = this.convertValues(source["staged"], Change);
+	        this.unstaged = this.convertValues(source["unstaged"], Change);
+	        this.untracked = this.convertValues(source["untracked"], Change);
+	        this.conflicted = this.convertValues(source["conflicted"], Change);
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Diff {
+	    path: string;
+	    staged: boolean;
+	    text: string;
+	    binary: boolean;
+	    truncated: boolean;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Diff(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.staged = source["staged"];
+	        this.text = source["text"];
+	        this.binary = source["binary"];
+	        this.truncated = source["truncated"];
+	        this.error = source["error"];
+	    }
+	}
 	export class OpResult {
 	    ok: boolean;
 	    op: string;
@@ -65,6 +145,22 @@ export namespace gitx {
 	        this.error = source["error"];
 	        this.kind = source["kind"];
 	        this.hint = source["hint"];
+	    }
+	}
+	export class Stash {
+	    ref: string;
+	    subject: string;
+	    age: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Stash(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ref = source["ref"];
+	        this.subject = source["subject"];
+	        this.age = source["age"];
 	    }
 	}
 	export class Status {
@@ -141,6 +237,46 @@ export namespace main {
 	        this.storeFile = source["storeFile"];
 	        this.storeError = source["storeError"];
 	    }
+	}
+	export class RepoDetail {
+	    path: string;
+	    name: string;
+	    status: gitx.Status;
+	    changes: gitx.Changes;
+	    stashes: gitx.Stash[];
+	    lastMessage: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RepoDetail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.status = this.convertValues(source["status"], gitx.Status);
+	        this.changes = this.convertValues(source["changes"], gitx.Changes);
+	        this.stashes = this.convertValues(source["stashes"], gitx.Stash);
+	        this.lastMessage = source["lastMessage"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class RepoView {
 	    path: string;

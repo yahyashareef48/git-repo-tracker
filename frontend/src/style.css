@@ -8,6 +8,9 @@
   --color-ink-faint: #6b7285;
 
   --color-surface: rgba(20, 23, 32, 0.72);
+  /* Views that cover other views need to actually cover them; Mica shows
+     through everything otherwise. Near-opaque keeps a hint of the backdrop. */
+  --color-surface-solid: rgba(16, 19, 26, 0.985);
   --color-surface-raised: rgba(31, 35, 47, 0.86);
   --color-surface-hover: rgba(48, 54, 71, 0.6);
   --color-line: rgba(255, 255, 255, 0.08);

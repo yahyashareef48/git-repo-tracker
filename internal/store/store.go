@@ -112,6 +112,19 @@ func (s *Store) Has(path string) bool {
 	return s.indexOf(path) >= 0
 }
 
+// Get returns the tracked entry for path, if there is one. Callers that only
+// have a path must use this rather than fabricating an Entry: a synthesised
+// one silently loses the repo's group and pin.
+func (s *Store) Get(path string) (Entry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if i := s.indexOf(path); i >= 0 {
+		return s.d.Repos[i], true
+	}
+	return Entry{}, false
+}
+
 // indexOf must be called under a held lock.
 func (s *Store) indexOf(path string) int {
 	want := normalise(path)

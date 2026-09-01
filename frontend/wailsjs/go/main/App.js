@@ -18,8 +18,24 @@ export function ChooseFolder(arg1) {
   return window['go']['main']['App']['ChooseFolder'](arg1);
 }
 
+export function CommitChanges(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CommitChanges'](arg1, arg2, arg3);
+}
+
 export function CopyToClipboard(arg1) {
   return window['go']['main']['App']['CopyToClipboard'](arg1);
+}
+
+export function DiscardFiles(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DiscardFiles'](arg1, arg2, arg3);
+}
+
+export function GetDetail(arg1) {
+  return window['go']['main']['App']['GetDetail'](arg1);
+}
+
+export function GetDiff(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GetDiff'](arg1, arg2, arg3, arg4);
 }
 
 export function GetEnv() {
@@ -76,4 +92,24 @@ export function SetGroup(arg1, arg2) {
 
 export function SetPinned(arg1, arg2) {
   return window['go']['main']['App']['SetPinned'](arg1, arg2);
+}
+
+export function StageFiles(arg1, arg2) {
+  return window['go']['main']['App']['StageFiles'](arg1, arg2);
+}
+
+export function StashAction(arg1, arg2, arg3) {
+  return window['go']['main']['App']['StashAction'](arg1, arg2, arg3);
+}
+
+export function StashPush(arg1, arg2, arg3) {
+  return window['go']['main']['App']['StashPush'](arg1, arg2, arg3);
+}
+
+export function UndoLastCommit(arg1) {
+  return window['go']['main']['App']['UndoLastCommit'](arg1);
+}
+
+export function UnstageFiles(arg1, arg2) {
+  return window['go']['main']['App']['UnstageFiles'](arg1, arg2);
 }

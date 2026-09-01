@@ -143,7 +143,16 @@ func (a *App) buildView(e store.Entry) RepoView {
 }
 
 // GetRepo returns fresh status for a single repo, for targeted refreshes.
+//
+// The stored entry is looked up rather than synthesised: building one from the
+// path alone drops the repo's group and pin, which then vanish from the list
+// the moment anything refreshes a single row.
 func (a *App) GetRepo(path string) RepoView {
+	if a.store != nil {
+		if e, ok := a.store.Get(path); ok {
+			return a.buildView(e)
+		}
+	}
 	return a.buildView(store.Entry{Path: path, Name: filepath.Base(path)})
 }
 
@@ -370,4 +379,76 @@ func (a *App) OpenURL(url string) {
 
 func sameDir(a, b string) bool {
 	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+// RepoDetail is everything the changes panel needs in one round trip.
+type RepoDetail struct {
+	Path        string       `json:"path"`
+	Name        string       `json:"name"`
+	Status      gitx.Status  `json:"status"`
+	Changes     gitx.Changes `json:"changes"`
+	Stashes     []gitx.Stash `json:"stashes"`
+	LastMessage string       `json:"lastMessage"`
+}
+
+// GetDetail opens one repo for editing: status, changed files and stashes.
+func (a *App) GetDetail(path string) RepoDetail {
+	ctx := a.context()
+	d := RepoDetail{Path: path, Name: filepath.Base(path)}
+	if path == "" {
+		return d
+	}
+	d.Status = gitx.GetStatus(ctx, path)
+	if d.Status.Name != "" {
+		d.Name = d.Status.Name
+	}
+	d.Changes = gitx.GetChanges(ctx, path)
+	d.Stashes = gitx.ListStashes(ctx, path)
+	d.LastMessage = gitx.LastCommitMessage(ctx, path)
+	return d
+}
+
+// GetDiff returns one file's unified diff.
+func (a *App) GetDiff(path, file string, staged, untracked bool) gitx.Diff {
+	return gitx.GetDiff(a.context(), path, file, staged, untracked)
+}
+
+// StageFiles adds files to the index; an empty list stages everything.
+func (a *App) StageFiles(path string, files []string) gitx.OpResult {
+	return gitx.Stage(a.context(), path, files)
+}
+
+// UnstageFiles removes files from the index.
+func (a *App) UnstageFiles(path string, files []string) gitx.OpResult {
+	return gitx.Unstage(a.context(), path, files)
+}
+
+// DiscardFiles throws away working-tree changes. Destructive by nature: the UI
+// confirms first, and untracked files are deleted rather than restored.
+func (a *App) DiscardFiles(path string, files []string, untracked bool) gitx.OpResult {
+	return gitx.Discard(a.context(), path, files, untracked)
+}
+
+// CommitChanges records the index.
+func (a *App) CommitChanges(path, message string, amend bool) gitx.OpResult {
+	if strings.TrimSpace(message) == "" {
+		return gitx.OpResult{Op: "commit", Repo: path, Kind: "nothing",
+			Error: "a commit needs a message"}
+	}
+	return gitx.Commit(a.context(), path, message, amend)
+}
+
+// UndoLastCommit moves HEAD back one, keeping the work staged.
+func (a *App) UndoLastCommit(path string) gitx.OpResult {
+	return gitx.UndoLastCommit(a.context(), path)
+}
+
+// StashPush stashes the working tree.
+func (a *App) StashPush(path, message string, includeUntracked bool) gitx.OpResult {
+	return gitx.PushStash(a.context(), path, message, includeUntracked)
+}
+
+// StashAction applies, pops or drops one stash entry.
+func (a *App) StashAction(path, action, ref string) gitx.OpResult {
+	return gitx.StashAction(a.context(), path, action, ref)
 }

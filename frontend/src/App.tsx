@@ -15,6 +15,7 @@ import {
 import { ConnectivityBanner, GitHubStatusPill } from './components/GitHubStatus'
 import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
+import { RepoDetail } from './components/RepoDetail'
 import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
 import { TitleBar } from './components/TitleBar'
@@ -264,7 +265,11 @@ export default function App() {
         </div>
       )}
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      {/* The changes panel covers the list rather than replacing it, so the
+          scroll position and filters survive a round trip. */}
+      <div className="relative min-h-0 flex-1">
+        <RepoDetail />
+        <main className="h-full overflow-y-auto">
         {loading && repos.length === 0 ? (
           <LoadingState />
         ) : repos.length === 0 ? (
@@ -287,8 +292,9 @@ export default function App() {
               ))}
             </section>
           ))
-        )}
-      </main>
+          )}
+        </main>
+      </div>
 
       <LogDrawer />
 

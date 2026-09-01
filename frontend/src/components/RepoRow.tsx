@@ -6,6 +6,7 @@ import {
   CloudUpload,
   Code2,
   DownloadCloud,
+  FileDiff,
   FolderOpen,
   FolderTree,
   GitMerge,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react'
 import { OpenIn } from '../../wailsjs/go/main/App'
 import type { gitx } from '../../wailsjs/go/models'
+import { useDetail } from '../store/detail'
 import { remoteUsable, useRepos, type RepoView } from '../store/repos'
 import { BranchPill, Counters, StatusDot } from './Badges'
 import { Menu, type MenuItem } from './Menu'
@@ -37,6 +39,7 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const anySelected = useRepos((s) => s.selected.size > 0)
   const toggleSelected = useRepos((s) => s.toggleSelected)
   const health = useRepos((s) => s.health)
+  const openDetail = useDetail((s) => s.openDetail)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -126,6 +129,11 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       icon: <Terminal size={13} />,
       onSelect: () => open('terminal', repo.path),
     },
+    {
+      label: 'View changes',
+      icon: <FileDiff size={13} />,
+      onSelect: () => openDetail(repo.path),
+    },
     { kind: 'separator' },
     {
       label: repo.group ? `Group: ${repo.group}` : 'Move to group…',
@@ -154,12 +162,12 @@ export function RepoRow({ repo }: { repo: RepoView }) {
 
   return (
     <div className="border-b border-line last:border-b-0">
+      {/* The row body opens the changes panel; the chevron is the only thing
+          that expands worktrees, so the two never fight over one click. */}
       <div
-        onClick={() => hasChildren && toggleExpanded(repo.path)}
-        className={
-          'group flex items-center gap-2 px-2 py-2 transition-colors hover:bg-surface-hover ' +
-          (hasChildren ? 'cursor-pointer' : '')
-        }
+        onClick={() => openDetail(repo.path)}
+        title="Open changes"
+        className="group flex cursor-pointer items-center gap-2 px-2 py-2 transition-colors hover:bg-surface-hover"
       >
         {/* Ticking rows is how you build an ad-hoc set: filter to it, or group
             it in one go. Hidden until hovered so the list stays calm. */}
@@ -266,7 +274,12 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       {expanded && hasChildren && (
         <div className="animate-fade-in pb-1">
           {worktrees.map((wt) => (
-            <WorktreeRow key={wt.path} status={wt} onOpen={open} />
+            <WorktreeRow
+              key={wt.path}
+              status={wt}
+              onOpen={open}
+              onOpenDetail={openDetail}
+            />
           ))}
         </div>
       )}
@@ -277,12 +290,18 @@ export function RepoRow({ repo }: { repo: RepoView }) {
 function WorktreeRow({
   status,
   onOpen,
+  onOpenDetail,
 }: {
   status: gitx.Status
   onOpen: (target: string, path: string) => void
+  onOpenDetail: (path: string) => void
 }) {
   return (
-    <div className="group flex items-center gap-2 py-1.5 pl-9 pr-2 transition-colors hover:bg-surface-hover">
+    <div
+      onClick={() => onOpenDetail(status.path)}
+      title="Open changes"
+      className="group flex cursor-pointer items-center gap-2 py-1.5 pl-9 pr-2 transition-colors hover:bg-surface-hover"
+    >
       {/* Tree elbow, so children read as belonging to the row above. */}
       <span className="-ml-3 mr-0.5 h-4 w-3 shrink-0 rounded-bl border-b border-l border-line" />
       <StatusDot status={status} />
