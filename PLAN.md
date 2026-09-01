@@ -204,7 +204,7 @@ UI response:
 | **3** | ✅ GitHub connectivity probe, banner, disabled-state wiring |
 | **4** | ✅ Changes panel: stage / unstage / discard / commit / amend / stash, plus a built-in diff view |
 | **5** | ✅ Worktree tree with add/remove, branch picker, history log |
-| **6** | Tray, autostart, bulk multi-repo ops |
+| **6** | ✅ Tray with badge, autostart, close-to-tray, settings, bulk ops with progress, background fetch |
 | **7** | Polish: Mica, animations, empty states, settings screen |
 | **8** | `wails build -nsis` → installer + portable build; GitHub-releases update check |
 

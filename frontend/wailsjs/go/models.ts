@@ -465,6 +465,7 @@ export namespace store {
 	    autoFetchMinutes: number;
 	    autoFetchEnabled: boolean;
 	    startMinimised: boolean;
+	    closeToTray: boolean;
 	    pullFromMainRebase: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -476,6 +477,7 @@ export namespace store {
 	        this.autoFetchMinutes = source["autoFetchMinutes"];
 	        this.autoFetchEnabled = source["autoFetchEnabled"];
 	        this.startMinimised = source["startMinimised"];
+	        this.closeToTray = source["closeToTray"];
 	        this.pullFromMainRebase = source["pullFromMainRebase"];
 	    }
 	}

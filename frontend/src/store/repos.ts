@@ -5,22 +5,31 @@ import {
   CheckGitHub,
   ChooseFolder,
   CopyToClipboard,
+  GetAutostart,
   GetEnv,
   GetRepo,
+  GetSettings,
   ListRepos,
   ListGroups,
   RemoveRepo,
   RunOp,
   ScanFolder,
+  SaveSettings,
+  SetAutostart,
   SetGroup,
   SetPinned,
 } from '../../wailsjs/go/main/App'
-import type { github, gitx, main } from '../../wailsjs/go/models'
+import type { github, gitx, main, store } from '../../wailsjs/go/models'
 
 export type RepoView = main.RepoView
 export type ScanResult = main.ScanResult
 export type Env = main.Env
 export type Health = github.Health
+export type Settings = store.Settings
+
+/** One repo's outcome inside a bulk run, for the progress strip. */
+export type BulkResult = { path: string; name: string; ok: boolean; error: string }
+export type Bulk = { op: Op; total: number; done: number; results: BulkResult[] } | null
 
 /** Remote git is worth attempting unless GitHub is plainly unreachable. A
  *  missing gh CLI is not a blocker: git may still have working credentials. */
@@ -116,6 +125,10 @@ type State = {
   groups: string[]
   health: Health | null
   healthChecking: boolean
+  settings: Settings | null
+  autostart: boolean
+  settingsOpen: boolean
+  bulk: Bulk
   /** '' = every repo, UNGROUPED = only repos with no group, else that group. */
   groupFilter: string
   /** Repos whose "move to group" dialog is open; empty when closed. */
@@ -130,6 +143,11 @@ type State = {
   init: () => Promise<void>
   checkHealth: () => Promise<void>
   copyAuthCommand: () => Promise<void>
+  loadSettings: () => Promise<void>
+  saveSettings: (patch: Partial<Settings>) => Promise<void>
+  setAutostart: (on: boolean) => Promise<void>
+  toggleSettings: () => void
+  dismissBulk: () => void
   refresh: () => Promise<void>
   refreshOne: (path: string) => Promise<void>
   setQuery: (q: string) => void
@@ -215,6 +233,10 @@ export const useRepos = create<State>((set, get) => ({
   groups: [],
   health: null,
   healthChecking: false,
+  settings: null,
+  autostart: false,
+  settingsOpen: false,
+  bulk: null,
   groupFilter: '',
   groupTargets: [],
   branchTarget: null,
@@ -229,6 +251,50 @@ export const useRepos = create<State>((set, get) => ({
     }
     await get().refresh()
     await get().checkHealth()
+    await get().loadSettings()
+  },
+
+  async loadSettings() {
+    try {
+      const [settings, autostart] = await Promise.all([GetSettings(), GetAutostart()])
+      set({ settings, autostart })
+    } catch (e) {
+      get().toast('error', message(e))
+    }
+  },
+
+  async saveSettings(patch) {
+    const current = get().settings
+    if (!current) return
+    const next = { ...current, ...patch } as Settings
+    set({ settings: next })
+    try {
+      await SaveSettings(next)
+    } catch (e) {
+      set({ settings: current })
+      get().toast('error', message(e))
+    }
+  },
+
+  async setAutostart(on) {
+    try {
+      await SetAutostart(on)
+      set({ autostart: on })
+      get().toast(
+        'success',
+        on ? 'GitDeck will start with Windows.' : 'GitDeck will no longer start with Windows.',
+      )
+    } catch (e) {
+      get().toast('error', message(e))
+    }
+  },
+
+  toggleSettings() {
+    set((s) => ({ settingsOpen: !s.settingsOpen }))
+  },
+
+  dismissBulk() {
+    set({ bulk: null })
   },
 
   async checkHealth() {
@@ -438,8 +504,12 @@ export const useRepos = create<State>((set, get) => ({
         log: [...s.log, ...results.map((r) => ({ ...r, at, repoName }))].slice(-300),
       }))
 
+      // A bulk run reports through its own progress strip; toasting each of
+      // twenty repos would bury the screen.
+      const inBulk = !!get().bulk
+
       const failed = results.find((r) => !r.ok)
-      if (failed) {
+      if (failed && !inBulk) {
         get().toast('error', `${opLabel(op)} failed — ${repoName}: ${failed.error}`, {
           detail: failed.hint,
           // A diverged branch has exactly two sensible resolutions; offer both
@@ -452,7 +522,7 @@ export const useRepos = create<State>((set, get) => ({
                 ]
               : undefined,
         })
-      } else {
+      } else if (!failed && !inBulk) {
         const summary = results
           .map((r) => r.stdout.split('\n').pop()?.trim())
           .filter(Boolean)
@@ -475,11 +545,39 @@ export const useRepos = create<State>((set, get) => ({
     // "all" means what the user can currently see: filtering to a group and
     // hitting Fetch all should not quietly fetch every other repo too.
     const { repos, groupFilter, query, selected } = get()
-    const paths = filterRepos(repos, groupFilter, query, selected).map((r) => r.path)
+    const targets = filterRepos(repos, groupFilter, query, selected)
+    if (targets.length === 0) return
+
+    set({ bulk: { op, total: targets.length, done: 0, results: [] } })
+
     // Sequential on purpose: parallel network git across every repo is a good
     // way to trip rate limits and produce an unreadable log.
-    for (const p of paths) {
-      await get().runOp(p, op)
+    for (const r of targets) {
+      const before = get().log.length
+      await get().runOp(r.path, op)
+
+      // Whatever this repo appended to the shared log is its outcome.
+      const added = get().log.slice(before)
+      const failed = added.find((e) => !e.ok)
+      set((s) =>
+        s.bulk
+          ? {
+              bulk: {
+                ...s.bulk,
+                done: s.bulk.done + 1,
+                results: [
+                  ...s.bulk.results,
+                  {
+                    path: r.path,
+                    name: r.name,
+                    ok: !failed,
+                    error: failed?.error ?? '',
+                  },
+                ],
+              },
+            }
+          : {},
+      )
     }
   },
 

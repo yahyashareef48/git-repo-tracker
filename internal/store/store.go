@@ -26,6 +26,9 @@ type Settings struct {
 	AutoFetchMinutes int  `json:"autoFetchMinutes"`
 	AutoFetchEnabled bool `json:"autoFetchEnabled"`
 	StartMinimised   bool `json:"startMinimised"`
+	// CloseToTray keeps the app running in the notification area when the
+	// window is closed, which is the point of having a tray icon at all.
+	CloseToTray bool `json:"closeToTray"`
 	// PullFromMainRebase switches "pull from main" from merge to rebase.
 	// Merge is the default, per the plan.
 	PullFromMainRebase bool `json:"pullFromMainRebase"`
@@ -44,7 +47,7 @@ type Store struct {
 }
 
 func defaultSettings() Settings {
-	return Settings{AutoFetchMinutes: 5, AutoFetchEnabled: true}
+	return Settings{AutoFetchMinutes: 5, AutoFetchEnabled: true, CloseToTray: true}
 }
 
 // New loads the store from disk, creating it on first run.

@@ -1,18 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
+	"gitdeck/internal/autostart"
 	"gitdeck/internal/github"
 	"gitdeck/internal/gitx"
 	"gitdeck/internal/store"
+	"gitdeck/internal/tray"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -24,6 +30,12 @@ type App struct {
 	store *store.Store
 	// storeErr is surfaced to the UI rather than crashing at startup.
 	storeErr string
+	// hidden tracks whether the window is tucked away in the tray, so the
+	// tray's left click knows which way to toggle.
+	hidden atomic.Bool
+	// quitting distinguishes "the user chose Quit" from "the user closed the
+	// window", which otherwise look identical to OnBeforeClose.
+	quitting atomic.Bool
 }
 
 // RepoView is one row of the repo list: the tracked entry, its status, and any
@@ -59,6 +71,17 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.startTray()
+
+	// Launched by the Windows Run entry, or configured to start hidden: go
+	// straight to the tray rather than flashing a window first.
+	// Only hide once the icon is genuinely in the tray; hiding first would
+	// leave no way to get the window back if the tray never appears.
+	wantHidden := autostart.LaunchedMinimised() ||
+		(a.store != nil && a.store.Settings().StartMinimised)
+	if wantHidden && tray.WaitReady(3*time.Second) {
+		a.HideWindow()
+	}
 }
 
 // context returns a usable context even before startup has run.
@@ -113,6 +136,10 @@ func (a *App) ListRepos() []RepoView {
 	sort.SliceStable(views, func(i, j int) bool {
 		return views[i].Pinned && !views[j].Pinned
 	})
+
+	// The list is refreshed on launch, on focus and after every operation, so
+	// this is the natural place to keep the tray honest.
+	tray.SetStatus(trayCounts(views))
 	return views
 }
 
@@ -510,4 +537,112 @@ func (a *App) AddWorktree(path, folder, branch string, createBranch bool) gitx.O
 // the UI confirms first and only forces when the user insists.
 func (a *App) RemoveWorktree(path, folder string, force bool) gitx.OpResult {
 	return gitx.RemoveWorktree(a.context(), path, folder, force)
+}
+
+// --- Tray and startup -------------------------------------------------------
+
+// trayCounts summarises the tracked repos for the tray tooltip and badge.
+func trayCounts(views []RepoView) tray.Status {
+	s := tray.Status{Repos: len(views)}
+	for _, v := range views {
+		if v.Status.Ahead > 0 || (v.Status.HasRemote && v.Status.Upstream == "") {
+			s.Unpushed++
+		}
+		if v.Status.Dirty() {
+			s.Dirty++
+		}
+		for _, wt := range v.Worktrees {
+			if wt.Ahead > 0 {
+				s.Unpushed++
+			}
+			if wt.Dirty() {
+				s.Dirty++
+			}
+		}
+	}
+	return s
+}
+
+// ShowWindow brings the window to the front from the tray.
+func (a *App) ShowWindow() {
+	ctx := a.context()
+	runtime.WindowShow(ctx)
+	runtime.WindowUnminimise(ctx)
+	a.hidden.Store(false)
+}
+
+// HideWindow tucks the app back into the tray.
+func (a *App) HideWindow() {
+	runtime.WindowHide(a.context())
+	a.hidden.Store(true)
+}
+
+// ToggleWindow is what a left click on the tray icon does.
+func (a *App) ToggleWindow() {
+	if a.hidden.Load() {
+		a.ShowWindow()
+		return
+	}
+	a.HideWindow()
+}
+
+// QuitApp exits for real, rather than hiding to the tray.
+func (a *App) QuitApp() {
+	a.quitting.Store(true)
+	tray.Stop()
+	runtime.Quit(a.context())
+}
+
+// GetAutostart reports whether Windows launches GitDeck at sign-in. The
+// registry is the source of truth, not our settings file, so an entry removed
+// through Task Manager is reflected honestly.
+func (a *App) GetAutostart() bool {
+	return autostart.Enabled()
+}
+
+// SetAutostart adds or removes the Windows startup entry.
+func (a *App) SetAutostart(on bool) error {
+	return autostart.Set(on)
+}
+
+// beforeClose keeps the app alive in the tray instead of exiting, unless the
+// user picked Quit or turned the behaviour off.
+func (a *App) beforeClose(ctx context.Context) bool {
+	if a.quitting.Load() {
+		return false
+	}
+	if a.store != nil && !a.store.Settings().CloseToTray {
+		tray.Stop()
+		return false
+	}
+	// Never hide with no tray icon to restore from: the app would keep running
+	// invisibly with no way to bring it back or shut it down.
+	if !tray.Running() {
+		return false
+	}
+	a.HideWindow()
+	return true
+}
+
+// startTray wires the notification-area icon to the app. Bulk operations are
+// emitted as events rather than run here: the frontend owns what "all" means,
+// since it knows the current group filter and selection.
+func (a *App) startTray() {
+	img, err := png.Decode(bytes.NewReader(appIconPNG))
+	if err != nil {
+		return
+	}
+	_ = tray.Start(img, tray.Callbacks{
+		Show:   a.ShowWindow,
+		Toggle: a.ToggleWindow,
+		FetchAll: func() {
+			a.ShowWindow()
+			runtime.EventsEmit(a.context(), "tray:fetch-all")
+		},
+		SyncAll: func() {
+			a.ShowWindow()
+			runtime.EventsEmit(a.context(), "tray:sync-all")
+		},
+		Quit: a.QuitApp,
+	})
 }

@@ -42,6 +42,10 @@ export function DiscardFiles(arg1, arg2, arg3) {
   return window['go']['main']['App']['DiscardFiles'](arg1, arg2, arg3);
 }
 
+export function GetAutostart() {
+  return window['go']['main']['App']['GetAutostart']();
+}
+
 export function GetCommitDiff(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetCommitDiff'](arg1, arg2, arg3);
 }
@@ -70,6 +74,10 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function HideWindow() {
+  return window['go']['main']['App']['HideWindow']();
+}
+
 export function ListBranches(arg1) {
   return window['go']['main']['App']['ListBranches'](arg1);
 }
@@ -92,6 +100,10 @@ export function OpenIn(arg1, arg2) {
 
 export function OpenURL(arg1) {
   return window['go']['main']['App']['OpenURL'](arg1);
+}
+
+export function QuitApp() {
+  return window['go']['main']['App']['QuitApp']();
 }
 
 export function RemoveRepo(arg1) {
@@ -118,6 +130,10 @@ export function ScanFolder(arg1, arg2) {
   return window['go']['main']['App']['ScanFolder'](arg1, arg2);
 }
 
+export function SetAutostart(arg1) {
+  return window['go']['main']['App']['SetAutostart'](arg1);
+}
+
 export function SetGroup(arg1, arg2) {
   return window['go']['main']['App']['SetGroup'](arg1, arg2);
 }
@@ -128,6 +144,10 @@ export function SetPinned(arg1, arg2) {
 
 export function ShowCommit(arg1, arg2) {
   return window['go']['main']['App']['ShowCommit'](arg1, arg2);
+}
+
+export function ShowWindow() {
+  return window['go']['main']['App']['ShowWindow']();
 }
 
 export function StageFiles(arg1, arg2) {
@@ -144,6 +164,10 @@ export function StashPush(arg1, arg2, arg3) {
 
 export function SwitchBranch(arg1, arg2, arg3) {
   return window['go']['main']['App']['SwitchBranch'](arg1, arg2, arg3);
+}
+
+export function ToggleWindow() {
+  return window['go']['main']['App']['ToggleWindow']();
 }
 
 export function UndoLastCommit(arg1) {

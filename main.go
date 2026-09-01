@@ -12,6 +12,12 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// appIconPNG is the source for the tray icon, badge included. Embedding it
+// keeps the tray working from a portable exe with no files beside it.
+//
+//go:embed build/appicon.png
+var appIconPNG []byte
+
 func main() {
 	app := NewApp()
 
@@ -37,6 +43,9 @@ func main() {
 			DisableWindowIcon:    false,
 		},
 		OnStartup: app.startup,
+		// Closing the window hides to the tray instead of exiting, unless the
+		// user turned that off or picked Quit from the tray menu.
+		OnBeforeClose: app.beforeClose,
 		Bind: []interface{}{
 			app,
 		},

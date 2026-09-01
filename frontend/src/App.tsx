@@ -10,20 +10,24 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings as SettingsIcon,
   Terminal,
   TriangleAlert,
   X,
 } from 'lucide-react'
 import { BranchPicker } from './components/BranchPicker'
+import { BulkStrip } from './components/BulkStrip'
 import { ConnectivityBanner, GitHubStatusPill } from './components/GitHubStatus'
 import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
 import { RepoDetail } from './components/RepoDetail'
 import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
+import { SettingsDialog } from './components/SettingsDialog'
 import { TitleBar } from './components/TitleBar'
 import { Toasts } from './components/Toasts'
 import { WorktreeDialog } from './components/WorktreeDialog'
+import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime'
 import {
   filterRepos,
   remoteUsable,
@@ -57,6 +61,8 @@ export default function App() {
   const openGroupDialog = useRepos((s) => s.openGroupDialog)
   const health = useRepos((s) => s.health)
   const checkHealth = useRepos((s) => s.checkHealth)
+  const settings = useRepos((s) => s.settings)
+  const toggleSettings = useRepos((s) => s.toggleSettings)
 
   useEffect(() => {
     init()
@@ -78,6 +84,31 @@ export default function App() {
     const id = setInterval(checkHealth, 60_000)
     return () => clearInterval(id)
   }, [checkHealth])
+
+  // The tray menu cannot know what "all" means — that depends on the current
+  // group filter and selection — so it asks the frontend to run it.
+  useEffect(() => {
+    EventsOn('tray:fetch-all', () => runOpAll('fetch'))
+    EventsOn('tray:sync-all', () => runOpAll('sync'))
+    return () => {
+      EventsOff('tray:fetch-all')
+      EventsOff('tray:sync-all')
+    }
+  }, [runOpAll])
+
+  // Background fetch, so ahead/behind is not stale the moment you look away.
+  useEffect(() => {
+    if (!settings?.autoFetchEnabled) return
+    const minutes = settings.autoFetchMinutes || 5
+    const id = setInterval(() => {
+      // Skip while offline or already busy: a queue of doomed fetches helps
+      // nobody, and neither does racing a run already in flight.
+      if (!remoteUsable(useRepos.getState().health)) return
+      if (useRepos.getState().busy.size > 0) return
+      runOpAll('fetch')
+    }, minutes * 60_000)
+    return () => clearInterval(id)
+  }, [settings?.autoFetchEnabled, settings?.autoFetchMinutes, runOpAll])
 
   const filtered = useMemo(
     () => filterRepos(repos, groupFilter, query, selected),
@@ -131,6 +162,7 @@ export default function App() {
       />
 
       <ConnectivityBanner />
+      <BulkStrip />
 
       {env && !env.gitFound && (
         <Banner>
@@ -180,6 +212,14 @@ export default function App() {
           icon={<RefreshCw size={13} className={loading ? 'animate-spin-slow' : ''} />}
           label="Refresh"
         />
+        <button
+          onClick={toggleSettings}
+          title="Settings"
+          aria-label="Settings"
+          className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-md border border-line bg-[rgba(255,255,255,0.04)] text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+        >
+          <SettingsIcon size={13} />
+        </button>
       </div>
 
       {groups.length > 0 && (
@@ -328,6 +368,7 @@ export default function App() {
       <GroupDialog />
       <BranchPicker />
       <WorktreeDialog />
+      <SettingsDialog />
       <Toasts />
     </div>
   )

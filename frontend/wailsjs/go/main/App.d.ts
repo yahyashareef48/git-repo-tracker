@@ -25,6 +25,8 @@ export function DeleteBranch(arg1:string,arg2:string,arg3:boolean):Promise<gitx.
 
 export function DiscardFiles(arg1:string,arg2:Array<string>,arg3:boolean):Promise<gitx.OpResult>;
 
+export function GetAutostart():Promise<boolean>;
+
 export function GetCommitDiff(arg1:string,arg2:string,arg3:string):Promise<gitx.Diff>;
 
 export function GetDetail(arg1:string):Promise<main.RepoDetail>;
@@ -39,6 +41,8 @@ export function GetRepo(arg1:string):Promise<main.RepoView>;
 
 export function GetSettings():Promise<store.Settings>;
 
+export function HideWindow():Promise<void>;
+
 export function ListBranches(arg1:string):Promise<Array<gitx.Branch>>;
 
 export function ListGroups():Promise<Array<string>>;
@@ -50,6 +54,8 @@ export function ListWorktrees(arg1:string):Promise<Array<gitx.Worktree>>;
 export function OpenIn(arg1:string,arg2:string):Promise<void>;
 
 export function OpenURL(arg1:string):Promise<void>;
+
+export function QuitApp():Promise<void>;
 
 export function RemoveRepo(arg1:string):Promise<void>;
 
@@ -63,11 +69,15 @@ export function SaveSettings(arg1:store.Settings):Promise<void>;
 
 export function ScanFolder(arg1:string,arg2:number):Promise<Array<main.ScanResult>>;
 
+export function SetAutostart(arg1:boolean):Promise<void>;
+
 export function SetGroup(arg1:string,arg2:string):Promise<void>;
 
 export function SetPinned(arg1:string,arg2:boolean):Promise<void>;
 
 export function ShowCommit(arg1:string,arg2:string):Promise<gitx.CommitDetail>;
+
+export function ShowWindow():Promise<void>;
 
 export function StageFiles(arg1:string,arg2:Array<string>):Promise<gitx.OpResult>;
 
@@ -76,6 +86,8 @@ export function StashAction(arg1:string,arg2:string,arg3:string):Promise<gitx.Op
 export function StashPush(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
 
 export function SwitchBranch(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
+
+export function ToggleWindow():Promise<void>;
 
 export function UndoLastCommit(arg1:string):Promise<gitx.OpResult>;
 
