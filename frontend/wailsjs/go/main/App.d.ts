@@ -25,6 +25,10 @@ export function DeleteBranch(arg1:string,arg2:string,arg3:boolean):Promise<gitx.
 
 export function DiscardFiles(arg1:string,arg2:Array<string>,arg3:boolean):Promise<gitx.OpResult>;
 
+export function EnterMini():Promise<void>;
+
+export function ExitMini():Promise<void>;
+
 export function GetAutostart():Promise<boolean>;
 
 export function GetCommitDiff(arg1:string,arg2:string,arg3:string):Promise<gitx.Diff>;
@@ -42,6 +46,8 @@ export function GetRepo(arg1:string):Promise<main.RepoView>;
 export function GetSettings():Promise<store.Settings>;
 
 export function HideWindow():Promise<void>;
+
+export function IsMini():Promise<boolean>;
 
 export function ListBranches(arg1:string):Promise<Array<gitx.Branch>>;
 
@@ -86,6 +92,8 @@ export function StashAction(arg1:string,arg2:string,arg3:string):Promise<gitx.Op
 export function StashPush(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
 
 export function SwitchBranch(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
+
+export function ToggleMiniPanel():Promise<void>;
 
 export function ToggleWindow():Promise<void>;
 

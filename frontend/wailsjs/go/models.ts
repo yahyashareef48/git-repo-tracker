@@ -467,6 +467,9 @@ export namespace store {
 	    startMinimised: boolean;
 	    closeToTray: boolean;
 	    pullFromMainRebase: boolean;
+	    watchMode: string;
+	    watchGroup: string;
+	    watchPaths: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -479,6 +482,9 @@ export namespace store {
 	        this.startMinimised = source["startMinimised"];
 	        this.closeToTray = source["closeToTray"];
 	        this.pullFromMainRebase = source["pullFromMainRebase"];
+	        this.watchMode = source["watchMode"];
+	        this.watchGroup = source["watchGroup"];
+	        this.watchPaths = source["watchPaths"];
 	    }
 	}
 

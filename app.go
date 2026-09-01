@@ -36,6 +36,11 @@ type App struct {
 	// quitting distinguishes "the user chose Quit" from "the user closed the
 	// window", which otherwise look identical to OnBeforeClose.
 	quitting atomic.Bool
+	// mini is true while the window is the compact tray panel.
+	mini atomic.Bool
+	// The full window's geometry, remembered across a trip through mini mode.
+	geoMu                      sync.Mutex
+	fullW, fullH, fullX, fullY int
 }
 
 // RepoView is one row of the repo list: the tracked entry, its status, and any
@@ -633,8 +638,10 @@ func (a *App) startTray() {
 		return
 	}
 	_ = tray.Start(img, tray.Callbacks{
-		Show:   a.ShowWindow,
-		Toggle: a.ToggleWindow,
+		// Left click opens the compact panel rather than the whole app: the
+		// point of the tray is a quick look, not a context switch.
+		Show:   a.ExitMini,
+		Toggle: a.ToggleMiniPanel,
 		FetchAll: func() {
 			a.ShowWindow()
 			runtime.EventsEmit(a.context(), "tray:fetch-all")
@@ -645,4 +652,103 @@ func (a *App) startTray() {
 		},
 		Quit: a.QuitApp,
 	})
+}
+
+// --- Mini panel -------------------------------------------------------------
+
+// Wails v2 gives an app exactly one window, so the compact tray panel is this
+// same window resized, repositioned and pinned on top — not a second one.
+const (
+	miniWidth  = 400
+	miniHeight = 540
+	// screenMargin keeps the panel clear of the screen edge, and enough above
+	// the bottom to clear a typical taskbar.
+	screenMargin = 16
+	taskbarClear = 56
+)
+
+// IsMini reports whether the window is currently the compact panel.
+func (a *App) IsMini() bool { return a.mini.Load() }
+
+// EnterMini shrinks the window into a tray-side panel: small, always on top,
+// parked in the bottom-right corner.
+func (a *App) EnterMini() {
+	ctx := a.context()
+	if !a.mini.Load() {
+		// Remember the real window so leaving mini mode restores it exactly.
+		a.geoMu.Lock()
+		a.fullW, a.fullH = runtime.WindowGetSize(ctx)
+		a.fullX, a.fullY = runtime.WindowGetPosition(ctx)
+		a.geoMu.Unlock()
+	}
+
+	// The window's configured minimum is far larger than the panel, so it has
+	// to be relaxed before the resize will take.
+	runtime.WindowSetMinSize(ctx, 320, 360)
+	runtime.WindowSetSize(ctx, miniWidth, miniHeight)
+
+	x, y := miniPosition(ctx)
+	runtime.WindowSetPosition(ctx, x, y)
+	runtime.WindowSetAlwaysOnTop(ctx, true)
+
+	a.mini.Store(true)
+	a.ShowWindow()
+	runtime.EventsEmit(ctx, "window:mode", "mini")
+}
+
+// ExitMini restores the full window.
+func (a *App) ExitMini() {
+	ctx := a.context()
+	runtime.WindowSetAlwaysOnTop(ctx, false)
+	runtime.WindowSetMinSize(ctx, 880, 560)
+
+	a.geoMu.Lock()
+	w, h, x, y := a.fullW, a.fullH, a.fullX, a.fullY
+	a.geoMu.Unlock()
+
+	if w < 880 || h < 560 {
+		w, h = 1180, 780
+	}
+	runtime.WindowSetSize(ctx, w, h)
+	if x != 0 || y != 0 {
+		runtime.WindowSetPosition(ctx, x, y)
+	} else {
+		runtime.WindowCenter(ctx)
+	}
+
+	a.mini.Store(false)
+	a.ShowWindow()
+	runtime.EventsEmit(ctx, "window:mode", "full")
+}
+
+// ToggleMiniPanel is what a left click on the tray icon does: show the panel,
+// or put it away if it is already the thing on screen.
+func (a *App) ToggleMiniPanel() {
+	if a.mini.Load() && !a.hidden.Load() {
+		a.HideWindow()
+		return
+	}
+	a.EnterMini()
+}
+
+// miniPosition parks the panel in the bottom-right of the current screen.
+// Wails reports screen sizes but not their offsets, so on a multi-monitor
+// setup the panel lands on the primary screen's coordinate space.
+func miniPosition(ctx context.Context) (int, int) {
+	w, h := 1920, 1080
+	if screens, err := runtime.ScreenGetAll(ctx); err == nil {
+		for _, s := range screens {
+			if s.IsCurrent || s.IsPrimary {
+				if s.Size.Width > 0 {
+					w, h = s.Size.Width, s.Size.Height
+				} else if s.Width > 0 {
+					w, h = s.Width, s.Height
+				}
+				if s.IsCurrent {
+					break
+				}
+			}
+		}
+	}
+	return w - miniWidth - screenMargin, h - miniHeight - taskbarClear
 }

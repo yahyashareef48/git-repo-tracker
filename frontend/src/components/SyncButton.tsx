@@ -49,7 +49,16 @@ const icons: Record<string, typeof RefreshCw> = {
   fetch: RefreshCw,
 }
 
-export function SyncButton({ status, path }: { status: Status; path: string }) {
+export function SyncButton({
+  status,
+  path,
+  compact,
+}: {
+  status: Status
+  path: string
+  /** Icon only, for the tray panel where every pixel of width counts. */
+  compact?: boolean
+}) {
   const busy = useRepos((s) => s.busy.has(path))
   const runOp = useRepos((s) => s.runOp)
   const health = useRepos((s) => s.health)
@@ -63,10 +72,13 @@ export function SyncButton({ status, path }: { status: Status; path: string }) {
     return (
       <span
         title={status.error ? status.error : 'This repository has no remote'}
-        className="flex h-7 w-[74px] items-center justify-center gap-1.5 rounded-md text-[11.5px] text-ink-faint"
+        className={
+          'flex h-7 items-center justify-center gap-1.5 rounded-md text-[11.5px] text-ink-faint ' +
+          (compact ? 'w-7' : 'w-[74px]')
+        }
       >
         <RefreshCwOff size={12} />
-        local
+        {!compact && 'local'}
       </span>
     )
   }
@@ -81,7 +93,8 @@ export function SyncButton({ status, path }: { status: Status; path: string }) {
       title={blocked ? (health?.message ?? 'GitHub is unreachable') : primary.hint}
       onClick={() => runOp(path, primary.op)}
       className={
-        'flex h-7 w-[74px] shrink-0 items-center justify-center gap-1.5 rounded-md border text-[11.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' +
+        'flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md border text-[11.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' +
+        (compact ? 'w-7 ' : 'w-[74px] ') +
         (emphasised
           ? 'border-accent/40 bg-accent-dim text-accent hover:bg-accent hover:text-[#0b0e14]'
           : 'border-line text-ink-soft hover:border-line-strong hover:text-ink')
@@ -92,7 +105,7 @@ export function SyncButton({ status, path }: { status: Status; path: string }) {
       ) : (
         <Icon size={12} />
       )}
-      {busy ? 'working' : primary.label}
+      {!compact && (busy ? 'working' : primary.label)}
     </button>
   )
 }

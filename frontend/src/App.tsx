@@ -7,6 +7,7 @@ import {
   FolderSearch,
   FolderTree,
   GitBranch,
+  Minimize2,
   Plus,
   RefreshCw,
   Search,
@@ -20,6 +21,7 @@ import { BulkStrip } from './components/BulkStrip'
 import { ConnectivityBanner, GitHubStatusPill } from './components/GitHubStatus'
 import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
+import { MiniPanel } from './components/MiniPanel'
 import { RepoDetail } from './components/RepoDetail'
 import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
@@ -63,6 +65,9 @@ export default function App() {
   const checkHealth = useRepos((s) => s.checkHealth)
   const settings = useRepos((s) => s.settings)
   const toggleSettings = useRepos((s) => s.toggleSettings)
+  const mode = useRepos((s) => s.mode)
+  const setMode = useRepos((s) => s.setMode)
+  const enterMini = useRepos((s) => s.enterMini)
 
   useEffect(() => {
     init()
@@ -90,11 +95,13 @@ export default function App() {
   useEffect(() => {
     EventsOn('tray:fetch-all', () => runOpAll('fetch'))
     EventsOn('tray:sync-all', () => runOpAll('sync'))
+    EventsOn('window:mode', (m: unknown) => setMode(m === 'mini' ? 'mini' : 'full'))
     return () => {
       EventsOff('tray:fetch-all')
       EventsOff('tray:sync-all')
+      EventsOff('window:mode')
     }
-  }, [runOpAll])
+  }, [runOpAll, setMode])
 
   // Background fetch, so ahead/behind is not stale the moment you look away.
   useEffect(() => {
@@ -147,6 +154,17 @@ export default function App() {
   }, [repos])
 
   const ungroupedCount = repos.filter((r) => !r.group).length
+
+  // The compact panel is the same window, so it swaps the whole tree rather
+  // than opening a second one — Wails v2 gives an app exactly one window.
+  if (mode === 'mini') {
+    return (
+      <>
+        <MiniPanel />
+        <Toasts />
+      </>
+    )
+  }
 
   return (
     <div className="flex h-full flex-col bg-surface text-ink">
@@ -212,6 +230,14 @@ export default function App() {
           icon={<RefreshCw size={13} className={loading ? 'animate-spin-slow' : ''} />}
           label="Refresh"
         />
+        <button
+          onClick={enterMini}
+          title="Shrink to the tray panel"
+          aria-label="Shrink to the tray panel"
+          className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-md border border-line bg-[rgba(255,255,255,0.04)] text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+        >
+          <Minimize2 size={13} />
+        </button>
         <button
           onClick={toggleSettings}
           title="Settings"

@@ -32,6 +32,14 @@ type Settings struct {
 	// PullFromMainRebase switches "pull from main" from merge to rebase.
 	// Merge is the default, per the plan.
 	PullFromMainRebase bool `json:"pullFromMainRebase"`
+
+	// WatchMode decides what the compact tray panel shows: "all", "group" or
+	// "picked". Tracking ten repos does not mean wanting ten in a HUD.
+	WatchMode string `json:"watchMode"`
+	// WatchGroup is the group shown when WatchMode is "group".
+	WatchGroup string `json:"watchGroup"`
+	// WatchPaths are the repos shown when WatchMode is "picked".
+	WatchPaths []string `json:"watchPaths"`
 }
 
 type data struct {
@@ -47,7 +55,12 @@ type Store struct {
 }
 
 func defaultSettings() Settings {
-	return Settings{AutoFetchMinutes: 5, AutoFetchEnabled: true, CloseToTray: true}
+	return Settings{
+		AutoFetchMinutes: 5,
+		AutoFetchEnabled: true,
+		CloseToTray:      true,
+		WatchMode:        "all",
+	}
 }
 
 // New loads the store from disk, creating it on first run.
@@ -78,6 +91,9 @@ func New() (*Store, error) {
 	}
 	if s.d.Settings.AutoFetchMinutes <= 0 {
 		s.d.Settings.AutoFetchMinutes = 5
+	}
+	if s.d.Settings.WatchMode == "" {
+		s.d.Settings.WatchMode = "all"
 	}
 	return s, nil
 }
@@ -250,6 +266,9 @@ func (s *Store) SaveSettings(v Settings) error {
 
 	if v.AutoFetchMinutes <= 0 {
 		v.AutoFetchMinutes = 5
+	}
+	if v.WatchMode == "" {
+		v.WatchMode = "all"
 	}
 	s.d.Settings = v
 	return s.save()

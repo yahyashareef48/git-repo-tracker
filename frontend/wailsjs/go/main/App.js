@@ -42,6 +42,14 @@ export function DiscardFiles(arg1, arg2, arg3) {
   return window['go']['main']['App']['DiscardFiles'](arg1, arg2, arg3);
 }
 
+export function EnterMini() {
+  return window['go']['main']['App']['EnterMini']();
+}
+
+export function ExitMini() {
+  return window['go']['main']['App']['ExitMini']();
+}
+
 export function GetAutostart() {
   return window['go']['main']['App']['GetAutostart']();
 }
@@ -76,6 +84,10 @@ export function GetSettings() {
 
 export function HideWindow() {
   return window['go']['main']['App']['HideWindow']();
+}
+
+export function IsMini() {
+  return window['go']['main']['App']['IsMini']();
 }
 
 export function ListBranches(arg1) {
@@ -164,6 +176,10 @@ export function StashPush(arg1, arg2, arg3) {
 
 export function SwitchBranch(arg1, arg2, arg3) {
   return window['go']['main']['App']['SwitchBranch'](arg1, arg2, arg3);
+}
+
+export function ToggleMiniPanel() {
+  return window['go']['main']['App']['ToggleMiniPanel']();
 }
 
 export function ToggleWindow() {
