@@ -1,4 +1,5 @@
-import { Check, Settings as SettingsIcon, X } from 'lucide-react'
+import { Check, Download, RefreshCw, Settings as SettingsIcon, X } from 'lucide-react'
+import { OpenURL } from '../../wailsjs/go/main/App'
 import { useRepos } from '../store/repos'
 
 export function SettingsDialog() {
@@ -10,6 +11,9 @@ export function SettingsDialog() {
   const setAutostart = useRepos((s) => s.setAutostart)
   const env = useRepos((s) => s.env)
   const health = useRepos((s) => s.health)
+  const update = useRepos((s) => s.update)
+  const checking = useRepos((s) => s.updateChecking)
+  const checkUpdate = useRepos((s) => s.checkUpdate)
 
   if (!open) return null
 
@@ -82,6 +86,42 @@ export function SettingsDialog() {
             checked={settings?.pullFromMainRebase ?? false}
             onChange={(v) => save({ pullFromMainRebase: v })}
           />
+        </div>
+
+        <div className="flex items-center gap-3 border-t border-line px-4 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] text-ink-soft">
+              GitDeck <span className="font-mono">{env?.version || 'dev'}</span>
+            </div>
+            <div className="text-[11px] leading-snug text-ink-faint">
+              {update?.error
+                ? update.error
+                : update?.available
+                  ? `Version ${update.latest} is available${update.published ? ` (${update.published})` : ''}.`
+                  : update
+                    ? 'You are on the latest version.'
+                    : 'Checks GitHub releases. Nothing is downloaded automatically.'}
+            </div>
+          </div>
+
+          {update?.available && update.url ? (
+            <button
+              onClick={() => OpenURL(update.url)}
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-[#0b0e14] hover:opacity-90"
+            >
+              <Download size={12} />
+              Get {update.latest}
+            </button>
+          ) : (
+            <button
+              onClick={() => checkUpdate(true)}
+              disabled={checking}
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-soft transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
+            >
+              <RefreshCw size={11} className={checking ? 'animate-spin-slow' : ''} />
+              Check
+            </button>
+          )}
         </div>
 
         <div className="space-y-0.5 border-t border-line px-4 py-3 text-[11px] text-ink-faint">

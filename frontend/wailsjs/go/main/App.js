@@ -18,6 +18,10 @@ export function CheckGitHub() {
   return window['go']['main']['App']['CheckGitHub']();
 }
 
+export function CheckUpdate() {
+  return window['go']['main']['App']['CheckUpdate']();
+}
+
 export function ChooseFolder(arg1) {
   return window['go']['main']['App']['ChooseFolder'](arg1);
 }

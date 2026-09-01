@@ -3,6 +3,7 @@ import {
   AddRepo,
   AddRepos,
   CheckGitHub,
+  CheckUpdate,
   ChooseFolder,
   CopyToClipboard,
   EnterMini,
@@ -14,6 +15,7 @@ import {
   IsMini,
   ListRepos,
   ListGroups,
+  OpenURL,
   RemoveRepo,
   Reorder,
   RunOp,
@@ -23,13 +25,14 @@ import {
   SetGroup,
   SetPinned,
 } from '../../wailsjs/go/main/App'
-import type { github, gitx, main, store } from '../../wailsjs/go/models'
+import type { github, gitx, main, store, update } from '../../wailsjs/go/models'
 
 export type RepoView = main.RepoView
 export type ScanResult = main.ScanResult
 export type Env = main.Env
 export type Health = github.Health
 export type Settings = store.Settings
+export type UpdateInfo = update.Info
 
 /** Which repos the compact tray panel shows. */
 export function watchedRepos(repos: RepoView[], settings: Settings | null) {
@@ -141,6 +144,8 @@ type State = {
   healthChecking: boolean
   settings: Settings | null
   autostart: boolean
+  update: UpdateInfo | null
+  updateChecking: boolean
   settingsOpen: boolean
   bulk: Bulk
   /** 'mini' is the compact tray panel; the app has only one real window. */
@@ -160,6 +165,7 @@ type State = {
   checkHealth: () => Promise<void>
   copyAuthCommand: () => Promise<void>
   loadSettings: () => Promise<void>
+  checkUpdate: (announce: boolean) => Promise<void>
   saveSettings: (patch: Partial<Settings>) => Promise<void>
   setAutostart: (on: boolean) => Promise<void>
   toggleSettings: () => void
@@ -259,6 +265,8 @@ export const useRepos = create<State>((set, get) => ({
   healthChecking: false,
   settings: null,
   autostart: false,
+  update: null,
+  updateChecking: false,
   settingsOpen: false,
   bulk: null,
   mode: 'full',
@@ -292,6 +300,33 @@ export const useRepos = create<State>((set, get) => ({
       set({ settings, autostart })
     } catch (e) {
       get().toast('error', message(e))
+    }
+  },
+
+  async checkUpdate(announce) {
+    set({ updateChecking: true })
+    try {
+      const info = await CheckUpdate()
+      set({ update: info })
+
+      // Only speak up when asked, or when there is genuinely something new.
+      // A silent launch check that toasts "you are up to date" is noise.
+      if (info.error) {
+        if (announce) get().toast('error', `Update check failed: ${info.error}`)
+      } else if (info.available) {
+        get().toast('info', `GitDeck ${info.latest} is available.`, {
+          detail: `You are on ${info.current}.`,
+          actions: info.url
+            ? [{ label: 'Open release', run: () => OpenURL(info.url) }]
+            : undefined,
+        })
+      } else if (announce) {
+        get().toast('success', `GitDeck ${info.current} is the latest version.`)
+      }
+    } catch (e) {
+      if (announce) get().toast('error', message(e))
+    } finally {
+      set({ updateChecking: false })
     }
   },
 

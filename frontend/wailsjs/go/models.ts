@@ -319,6 +319,7 @@ export namespace main {
 	    gitVersion: string;
 	    storeFile: string;
 	    storeError: string;
+	    version: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Env(source);
@@ -330,6 +331,7 @@ export namespace main {
 	        this.gitVersion = source["gitVersion"];
 	        this.storeFile = source["storeFile"];
 	        this.storeError = source["storeError"];
+	        this.version = source["version"];
 	    }
 	}
 	export class RepoDetail {
@@ -459,6 +461,37 @@ export namespace store {
 	        this.watchMode = source["watchMode"];
 	        this.watchGroup = source["watchGroup"];
 	        this.watchPaths = source["watchPaths"];
+	    }
+	}
+
+}
+
+export namespace update {
+	
+	export class Info {
+	    current: string;
+	    latest: string;
+	    available: boolean;
+	    url: string;
+	    notes: string;
+	    published: string;
+	    error: string;
+	    checkedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.available = source["available"];
+	        this.url = source["url"];
+	        this.notes = source["notes"];
+	        this.published = source["published"];
+	        this.error = source["error"];
+	        this.checkedAt = source["checkedAt"];
 	    }
 	}
 

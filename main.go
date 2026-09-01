@@ -18,8 +18,16 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIconPNG []byte
 
+// version is stamped at build time with -ldflags "-X main.version=x.y.z".
+// A plain build leaves it as "dev", which the updater treats as always current.
+var version = "dev"
+
+// releaseRepo is where update checks look for newer builds.
+const releaseRepo = "yahyashareef48/git-repo-tracker"
+
 func main() {
 	app := NewApp()
+	app.version = version
 
 	err := wails.Run(&options.App{
 		Title:     "GitDeck",

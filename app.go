@@ -20,6 +20,7 @@ import (
 	"gitdeck/internal/gitx"
 	"gitdeck/internal/store"
 	"gitdeck/internal/tray"
+	"gitdeck/internal/update"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -48,6 +49,8 @@ type App struct {
 	// fullMaximised remembers a maximised window, which has no meaningful
 	// size or position of its own to restore.
 	fullMaximised bool
+	// version is stamped into the binary at build time.
+	version string
 }
 
 // RepoView is one row of the repo list: the tracked entry, its status, and any
@@ -68,6 +71,7 @@ type Env struct {
 	GitVersion string `json:"gitVersion"`
 	StoreFile  string `json:"storeFile"`
 	StoreError string `json:"storeError"`
+	Version    string `json:"version"`
 }
 
 func NewApp() *App {
@@ -108,7 +112,7 @@ var errNoStore = errors.New("settings file could not be opened; check %APPDATA%\
 
 // GetEnv reports the availability of the tools the app shells out to.
 func (a *App) GetEnv() Env {
-	e := Env{StoreError: a.storeErr}
+	e := Env{StoreError: a.storeErr, Version: a.version}
 	if a.store != nil {
 		e.StoreFile = a.store.File()
 	}
@@ -380,6 +384,13 @@ func (a *App) CheckGitHub() github.Health {
 // affordances. GitDeck never types credentials on the user's behalf.
 func (a *App) CopyToClipboard(text string) error {
 	return runtime.ClipboardSetText(a.context(), text)
+}
+
+// CheckUpdate asks GitHub whether a newer release exists. Nothing is ever
+// downloaded or installed: it reports a version and a link, and the user
+// decides.
+func (a *App) CheckUpdate() update.Info {
+	return update.Check(a.context(), a.version, releaseRepo)
 }
 
 // GetSettings returns the persisted settings.

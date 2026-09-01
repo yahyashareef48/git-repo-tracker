@@ -88,6 +88,13 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus)
   }, [refresh, checkHealth, loadSettings])
 
+  // One quiet check shortly after launch: announce nothing unless there is
+  // actually a newer release.
+  useEffect(() => {
+    const id = setTimeout(() => useRepos.getState().checkUpdate(false), 8000)
+    return () => clearTimeout(id)
+  }, [])
+
   // Connectivity changes without anyone touching the app, so poll for it.
   useEffect(() => {
     const id = setInterval(checkHealth, 60_000)

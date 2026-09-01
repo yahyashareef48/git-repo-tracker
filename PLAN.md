@@ -206,7 +206,7 @@ UI response:
 | **5** | ✅ Worktree tree with add/remove, branch picker, history log |
 | **6** | ✅ Tray with badge, autostart, close-to-tray, settings, bulk ops with progress, background fetch |
 | **7** | ✅ Polish: focus rings, reduced-motion, empty states, drag-to-reorder, open-on-web, window title, dead code removed |
-| **8** | `wails build -nsis` → installer + portable build; GitHub-releases update check |
+| **8** | ✅ `wails build -nsis` → installer + portable build; GitHub-releases update check |
 
 Phases 0–3 already give a genuinely usable app. Each phase ends in a commit and a push.
 
