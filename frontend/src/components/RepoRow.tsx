@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { OpenIn } from '../../wailsjs/go/main/App'
 import type { gitx } from '../../wailsjs/go/models'
-import { useRepos, type RepoView } from '../store/repos'
+import { remoteUsable, useRepos, type RepoView } from '../store/repos'
 import { BranchPill, Counters, StatusDot } from './Badges'
 import { Menu, type MenuItem } from './Menu'
 import { SyncButton } from './SyncButton'
@@ -36,6 +36,7 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const selected = useRepos((s) => s.selected.has(repo.path))
   const anySelected = useRepos((s) => s.selected.size > 0)
   const toggleSelected = useRepos((s) => s.toggleSelected)
+  const health = useRepos((s) => s.health)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -53,6 +54,10 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   // nothing to publish, and a repo with no remote has nothing to fetch from.
   const remote = repo.status.hasRemote && !repo.status.error
   const published = !!repo.status.upstream
+  // Remote ops are shown but disabled when GitHub is down, so the menu does not
+  // silently change shape and the tooltip can say why.
+  const offline = !remoteUsable(health)
+  const why = offline ? (health?.message ?? 'GitHub is unreachable') : undefined
 
   const menuItems: MenuItem[] = []
   if (remote) {
@@ -60,14 +65,36 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       {
         label: 'Fetch',
         icon: <DownloadCloud size={13} />,
+        disabled: offline,
+        title: why,
         onSelect: () => runOp(repo.path, 'fetch'),
       },
-      { label: 'Pull', icon: <ArrowDown size={13} />, onSelect: () => runOp(repo.path, 'pull') },
-      { label: 'Push', icon: <ArrowUp size={13} />, onSelect: () => runOp(repo.path, 'push') },
-      { label: 'Sync', icon: <RefreshCw size={13} />, onSelect: () => runOp(repo.path, 'sync') },
+      {
+        label: 'Pull',
+        icon: <ArrowDown size={13} />,
+        disabled: offline,
+        title: why,
+        onSelect: () => runOp(repo.path, 'pull'),
+      },
+      {
+        label: 'Push',
+        icon: <ArrowUp size={13} />,
+        disabled: offline,
+        title: why,
+        onSelect: () => runOp(repo.path, 'push'),
+      },
+      {
+        label: 'Sync',
+        icon: <RefreshCw size={13} />,
+        disabled: offline,
+        title: why,
+        onSelect: () => runOp(repo.path, 'sync'),
+      },
       {
         label: `Pull from ${repo.status.defaultBranch || 'main'}`,
         icon: <GitMerge size={13} />,
+        disabled: offline,
+        title: why,
         onSelect: () => runOp(repo.path, 'pull-from-main'),
       },
     )
@@ -75,6 +102,8 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       menuItems.push({
         label: 'Publish branch',
         icon: <CloudUpload size={13} />,
+        disabled: offline,
+        title: why,
         onSelect: () => runOp(repo.path, 'publish'),
       })
     }

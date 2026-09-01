@@ -10,8 +10,16 @@ export function AddRepos(arg1) {
   return window['go']['main']['App']['AddRepos'](arg1);
 }
 
+export function CheckGitHub() {
+  return window['go']['main']['App']['CheckGitHub']();
+}
+
 export function ChooseFolder(arg1) {
   return window['go']['main']['App']['ChooseFolder'](arg1);
+}
+
+export function CopyToClipboard(arg1) {
+  return window['go']['main']['App']['CopyToClipboard'](arg1);
 }
 
 export function GetEnv() {

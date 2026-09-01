@@ -198,10 +198,10 @@ UI response:
 
 | Phase | Deliverable |
 |---|---|
-| **0** | ✅ Go + Wails installed and verified. Next: `git init`, branch `feat/gitdeck-mvp`, `wails init` with the React-TS template, add Tailwind + shadcn, hello window |
-| **1** | Repo store, add/remove/scan, repo list with live status (branch, ahead/behind, dirty) |
-| **2** | Core ops: fetch, pull, push, sync, pull-from-main — single repo, with error surfacing |
-| **3** | GitHub connectivity probe, banner, disabled-state wiring |
+| **0** | ✅ Toolchain installed, scaffold built, first binary produced |
+| **1** | ✅ Repo store, add/remove/scan, live status, worktree nesting, groups, multi-select |
+| **2** | ✅ Core ops: fetch, pull, push, sync, pull-from-main, with error surfacing |
+| **3** | ✅ GitHub connectivity probe, banner, disabled-state wiring |
 | **4** | Changes panel: stage / unstage / discard / commit / stash, plus Monaco diff |
 | **5** | Worktree tree, branch picker, history log |
 | **6** | Tray, autostart, bulk multi-repo ops |

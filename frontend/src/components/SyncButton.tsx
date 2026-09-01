@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, CloudUpload, Loader2, RefreshCw, RefreshCwOff } from 'lucide-react'
 import type { gitx } from '../../wailsjs/go/models'
-import { useRepos, type Op } from '../store/repos'
+import { remoteUsable, useRepos, type Op } from '../store/repos'
 
 type Status = gitx.Status
 
@@ -52,6 +52,10 @@ const icons: Record<string, typeof RefreshCw> = {
 export function SyncButton({ status, path }: { status: Status; path: string }) {
   const busy = useRepos((s) => s.busy.has(path))
   const runOp = useRepos((s) => s.runOp)
+  const health = useRepos((s) => s.health)
+  // With GitHub plainly unreachable, a remote op can only fail. Local work
+  // (commit, stage, stash, branch) stays available.
+  const blocked = !remoteUsable(health)
 
   const primary = primaryOp(status)
 
@@ -73,11 +77,11 @@ export function SyncButton({ status, path }: { status: Status; path: string }) {
 
   return (
     <button
-      disabled={busy}
-      title={primary.hint}
+      disabled={busy || blocked}
+      title={blocked ? (health?.message ?? 'GitHub is unreachable') : primary.hint}
       onClick={() => runOp(path, primary.op)}
       className={
-        'flex h-7 w-[74px] shrink-0 items-center justify-center gap-1.5 rounded-md border text-[11.5px] font-medium transition-colors disabled:opacity-60 ' +
+        'flex h-7 w-[74px] shrink-0 items-center justify-center gap-1.5 rounded-md border text-[11.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' +
         (emphasised
           ? 'border-accent/40 bg-accent-dim text-accent hover:bg-accent hover:text-[#0b0e14]'
           : 'border-line text-ink-soft hover:border-line-strong hover:text-ink')

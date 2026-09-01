@@ -12,13 +12,21 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
+import { ConnectivityBanner, GitHubStatusPill } from './components/GitHubStatus'
 import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
 import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
 import { TitleBar } from './components/TitleBar'
 import { Toasts } from './components/Toasts'
-import { filterRepos, SELECTED, UNGROUPED, useRepos, type RepoView } from './store/repos'
+import {
+  filterRepos,
+  remoteUsable,
+  SELECTED,
+  UNGROUPED,
+  useRepos,
+  type RepoView,
+} from './store/repos'
 
 export default function App() {
   const init = useRepos((s) => s.init)
@@ -42,6 +50,8 @@ export default function App() {
   const selectVisible = useRepos((s) => s.selectVisible)
   const clearSelection = useRepos((s) => s.clearSelection)
   const openGroupDialog = useRepos((s) => s.openGroupDialog)
+  const health = useRepos((s) => s.health)
+  const checkHealth = useRepos((s) => s.checkHealth)
 
   useEffect(() => {
     init()
@@ -50,10 +60,19 @@ export default function App() {
   // Refresh when the window regains focus: the user has almost certainly just
   // been running git in a terminal.
   useEffect(() => {
-    const onFocus = () => refresh()
+    const onFocus = () => {
+      refresh()
+      checkHealth()
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [refresh])
+  }, [refresh, checkHealth])
+
+  // Connectivity changes without anyone touching the app, so poll for it.
+  useEffect(() => {
+    const id = setInterval(checkHealth, 60_000)
+    return () => clearInterval(id)
+  }, [checkHealth])
 
   const filtered = useMemo(
     () => filterRepos(repos, groupFilter, query, selected),
@@ -97,11 +116,16 @@ export default function App() {
     <div className="flex h-full flex-col bg-surface text-ink">
       <TitleBar
         right={
-          <span className="text-[11.5px] text-ink-faint">
-            {repos.length} repositor{repos.length === 1 ? 'y' : 'ies'}
-          </span>
+          <>
+            <GitHubStatusPill />
+            <span className="text-[11.5px] text-ink-faint">
+              {repos.length} repositor{repos.length === 1 ? 'y' : 'ies'}
+            </span>
+          </>
         }
       />
+
+      <ConnectivityBanner />
 
       {env && !env.gitFound && (
         <Banner>
@@ -143,6 +167,8 @@ export default function App() {
           onClick={() => runOpAll('fetch')}
           icon={<DownloadCloud size={13} className={busyCount > 0 ? 'animate-spin-slow' : ''} />}
           label={groupFilter ? 'Fetch group' : 'Fetch all'}
+          disabled={!remoteUsable(health)}
+          title={remoteUsable(health) ? undefined : health?.message}
         />
         <ToolbarButton
           onClick={refresh}
@@ -357,16 +383,21 @@ function ToolbarButton({
   icon,
   label,
   onClick,
+  disabled,
+  title,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
+  disabled?: boolean
+  title?: string
 }) {
   return (
     <button
       onClick={onClick}
-      title={label}
-      className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+      disabled={disabled}
+      title={title ?? label}
+      className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line disabled:hover:text-ink-soft"
     >
       {icon}
       {label}

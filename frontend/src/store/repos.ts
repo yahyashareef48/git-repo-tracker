@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import {
   AddRepo,
   AddRepos,
+  CheckGitHub,
   ChooseFolder,
+  CopyToClipboard,
   GetEnv,
   GetRepo,
   ListRepos,
@@ -13,11 +15,19 @@ import {
   SetGroup,
   SetPinned,
 } from '../../wailsjs/go/main/App'
-import type { gitx, main } from '../../wailsjs/go/models'
+import type { github, gitx, main } from '../../wailsjs/go/models'
 
 export type RepoView = main.RepoView
 export type ScanResult = main.ScanResult
 export type Env = main.Env
+export type Health = github.Health
+
+/** Remote git is worth attempting unless GitHub is plainly unreachable. A
+ *  missing gh CLI is not a blocker: git may still have working credentials. */
+export function remoteUsable(h: Health | null) {
+  if (!h) return true
+  return h.state === 'connected' || h.state === 'degraded' || h.state === 'nocli'
+}
 export type OpResult = gitx.OpResult
 
 /** Every git operation the app has run this session, newest last. */
@@ -104,6 +114,8 @@ type State = {
   log: LogEntry[]
   logOpen: boolean
   groups: string[]
+  health: Health | null
+  healthChecking: boolean
   /** '' = every repo, UNGROUPED = only repos with no group, else that group. */
   groupFilter: string
   /** Repos whose "move to group" dialog is open; empty when closed. */
@@ -112,6 +124,8 @@ type State = {
   selected: Set<string>
 
   init: () => Promise<void>
+  checkHealth: () => Promise<void>
+  copyAuthCommand: () => Promise<void>
   refresh: () => Promise<void>
   refreshOne: (path: string) => Promise<void>
   setQuery: (q: string) => void
@@ -169,6 +183,8 @@ export const useRepos = create<State>((set, get) => ({
   log: [],
   logOpen: false,
   groups: [],
+  health: null,
+  healthChecking: false,
   groupFilter: '',
   groupTargets: [],
   selected: new Set<string>(),
@@ -180,6 +196,52 @@ export const useRepos = create<State>((set, get) => ({
       get().toast('error', message(e))
     }
     await get().refresh()
+    await get().checkHealth()
+  },
+
+  async checkHealth() {
+    const before = get().health?.state
+    set({ healthChecking: true })
+    try {
+      const health = await CheckGitHub()
+      set({ health })
+
+      // Log only on a state change: a 60-second poll that appends every time
+      // would bury the git output it sits next to.
+      if (health.state !== before && health.state !== 'connected') {
+        set((s) => ({
+          log: [
+            ...s.log,
+            {
+              ok: false,
+              op: 'github-check',
+              repo: '',
+              command: 'gh auth status && gh api rate_limit',
+              stdout: '',
+              stderr: health.detail || health.message,
+              error: health.message,
+              kind: health.state,
+              hint: '',
+              at: health.checkedAt,
+              repoName: 'GitHub',
+            },
+          ].slice(-300),
+        }))
+      }
+    } catch (e) {
+      get().toast('error', message(e))
+    } finally {
+      set({ healthChecking: false })
+    }
+  },
+
+  async copyAuthCommand() {
+    try {
+      await CopyToClipboard('gh auth login')
+      get().toast('info', 'Copied `gh auth login` — run it in a terminal, then retry.')
+    } catch (e) {
+      get().toast('error', message(e))
+    }
   },
 
   async refresh() {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"gitdeck/internal/github"
 	"gitdeck/internal/gitx"
 	"gitdeck/internal/store"
 
@@ -306,6 +307,19 @@ func (a *App) RunOp(op, path string) []gitx.OpResult {
 	default:
 		return []gitx.OpResult{{Op: op, Error: "unknown operation: " + op, Kind: "generic"}}
 	}
+}
+
+// CheckGitHub probes whether GitHub is usable right now. The frontend calls
+// this on launch, on a timer and on demand; it is deliberately not cached in Go
+// so a manual retry always reflects reality rather than a stale answer.
+func (a *App) CheckGitHub() github.Health {
+	return github.Check(a.context())
+}
+
+// CopyToClipboard puts text on the clipboard, for the "run this yourself"
+// affordances. GitDeck never types credentials on the user's behalf.
+func (a *App) CopyToClipboard(text string) error {
+	return runtime.ClipboardSetText(a.context(), text)
 }
 
 // GetSettings returns the persisted settings.

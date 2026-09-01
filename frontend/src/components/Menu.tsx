@@ -8,6 +8,9 @@ export type MenuItem =
       label: string
       icon?: React.ReactNode
       danger?: boolean
+      disabled?: boolean
+      /** Shown as a tooltip; use it to say why a disabled item is disabled. */
+      title?: string
       onSelect: () => void
     }
 
@@ -102,15 +105,19 @@ export function Menu({
               ) : (
                 <button
                   key={i}
+                  disabled={item.disabled}
+                  title={item.title}
                   onClick={() => {
                     setOpen(false)
                     item.onSelect()
                   }}
                   className={
                     'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] leading-5 transition-colors ' +
-                    (item.danger
-                      ? 'text-conflict hover:bg-[rgba(242,96,122,0.12)]'
-                      : 'text-ink-soft hover:bg-surface-hover hover:text-ink')
+                    (item.disabled
+                      ? 'cursor-not-allowed text-ink-faint line-through decoration-ink-faint/40'
+                      : item.danger
+                        ? 'text-conflict hover:bg-[rgba(242,96,122,0.12)]'
+                        : 'text-ink-soft hover:bg-surface-hover hover:text-ink')
                   }
                 >
                   <span className="grid w-4 shrink-0 place-items-center">{item.icon}</span>

@@ -1,3 +1,42 @@
+export namespace github {
+	
+	export class Health {
+	    state: string;
+	    cliFound: boolean;
+	    version: string;
+	    authed: boolean;
+	    account: string;
+	    scopes: string;
+	    reachable: boolean;
+	    rateLimit: number;
+	    rateLeft: number;
+	    message: string;
+	    detail: string;
+	    checkedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Health(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.cliFound = source["cliFound"];
+	        this.version = source["version"];
+	        this.authed = source["authed"];
+	        this.account = source["account"];
+	        this.scopes = source["scopes"];
+	        this.reachable = source["reachable"];
+	        this.rateLimit = source["rateLimit"];
+	        this.rateLeft = source["rateLeft"];
+	        this.message = source["message"];
+	        this.detail = source["detail"];
+	        this.checkedAt = source["checkedAt"];
+	    }
+	}
+
+}
+
 export namespace gitx {
 	
 	export class OpResult {
