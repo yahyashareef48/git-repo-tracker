@@ -1,28 +1,587 @@
-import {useState} from 'react';
-import logo from './assets/images/logo-universal.png';
-import './App.css';
-import {Greet} from "../wailsjs/go/main/App";
+import { useEffect, useMemo } from 'react'
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  DownloadCloud,
+  FolderPlus,
+  FolderSearch,
+  FolderTree,
+  GitBranch,
+  Minimize2,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings as SettingsIcon,
+  Terminal,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
+import { BranchPicker } from './components/BranchPicker'
+import { BulkStrip } from './components/BulkStrip'
+import { ConnectivityBanner, GitHubStatusPill } from './components/GitHubStatus'
+import { GroupDialog } from './components/GroupDialog'
+import { LogDrawer } from './components/LogDrawer'
+import { MiniPanel } from './components/MiniPanel'
+import { RepoDetail } from './components/RepoDetail'
+import { RepoRow } from './components/RepoRow'
+import { ScanDialog } from './components/ScanDialog'
+import { SettingsDialog } from './components/SettingsDialog'
+import { TitleBar } from './components/TitleBar'
+import { Toasts } from './components/Toasts'
+import { WorktreeDialog } from './components/WorktreeDialog'
+import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime'
+import {
+  filterRepos,
+  remoteUsable,
+  SELECTED,
+  UNGROUPED,
+  useRepos,
+  type RepoView,
+} from './store/repos'
 
-function App() {
-    const [resultText, setResultText] = useState("Please enter your name below 👇");
-    const [name, setName] = useState('');
-    const updateName = (e: any) => setName(e.target.value);
-    const updateResultText = (result: string) => setResultText(result);
+export default function App() {
+  const init = useRepos((s) => s.init)
+  const repos = useRepos((s) => s.repos)
+  const env = useRepos((s) => s.env)
+  const loading = useRepos((s) => s.loading)
+  const query = useRepos((s) => s.query)
+  const setQuery = useRepos((s) => s.setQuery)
+  const refresh = useRepos((s) => s.refresh)
+  const addRepo = useRepos((s) => s.addRepo)
+  const startScan = useRepos((s) => s.startScan)
+  const runOpAll = useRepos((s) => s.runOpAll)
+  const toggleLog = useRepos((s) => s.toggleLog)
+  const logCount = useRepos((s) => s.log.length)
+  const logFailures = useRepos((s) => s.log.filter((e) => !e.ok).length)
+  const busyCount = useRepos((s) => s.busy.size)
+  const groups = useRepos((s) => s.groups)
+  const groupFilter = useRepos((s) => s.groupFilter)
+  const setGroupFilter = useRepos((s) => s.setGroupFilter)
+  const selected = useRepos((s) => s.selected)
+  const selectVisible = useRepos((s) => s.selectVisible)
+  const clearSelection = useRepos((s) => s.clearSelection)
+  const openGroupDialog = useRepos((s) => s.openGroupDialog)
+  const health = useRepos((s) => s.health)
+  const checkHealth = useRepos((s) => s.checkHealth)
+  const settings = useRepos((s) => s.settings)
+  const loadSettings = useRepos((s) => s.loadSettings)
+  const toggleSettings = useRepos((s) => s.toggleSettings)
+  const mode = useRepos((s) => s.mode)
+  const setMode = useRepos((s) => s.setMode)
+  const enterMini = useRepos((s) => s.enterMini)
 
-    function greet() {
-        Greet(name).then(updateResultText);
+  useEffect(() => {
+    init()
+  }, [init])
+
+  // Refresh when the window regains focus: the user has almost certainly just
+  // been running git in a terminal.
+  useEffect(() => {
+    const onFocus = () => {
+      refresh()
+      checkHealth()
+      // Settings can change from the panel while the full window is hidden,
+      // and vice versa; both views read the same file, so re-read on focus.
+      loadSettings()
     }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh, checkHealth, loadSettings])
 
+  // One quiet check shortly after launch: announce nothing unless there is
+  // actually a newer release.
+  useEffect(() => {
+    const id = setTimeout(() => useRepos.getState().checkUpdate(false), 8000)
+    return () => clearTimeout(id)
+  }, [])
+
+  // Connectivity changes without anyone touching the app, so poll for it.
+  useEffect(() => {
+    const id = setInterval(checkHealth, 60_000)
+    return () => clearInterval(id)
+  }, [checkHealth])
+
+  // The tray menu cannot know what "all" means — that depends on the current
+  // group filter and selection — so it asks the frontend to run it.
+  useEffect(() => {
+    EventsOn('tray:fetch-all', () => runOpAll('fetch'))
+    EventsOn('tray:sync-all', () => runOpAll('sync'))
+    EventsOn('window:mode', (m: unknown) => {
+      setMode(m === 'mini' ? 'mini' : 'full')
+      // Switching views is the moment the watch list matters, so make sure it
+      // is the one on disk rather than whatever was loaded at startup.
+      loadSettings()
+      refresh()
+    })
+    return () => {
+      EventsOff('tray:fetch-all')
+      EventsOff('tray:sync-all')
+      EventsOff('window:mode')
+    }
+  }, [runOpAll, setMode, loadSettings, refresh])
+
+  // Background fetch, so ahead/behind is not stale the moment you look away.
+  useEffect(() => {
+    if (!settings?.autoFetchEnabled) return
+    const minutes = settings.autoFetchMinutes || 5
+    const id = setInterval(() => {
+      // Skip while offline or already busy: a queue of doomed fetches helps
+      // nobody, and neither does racing a run already in flight.
+      if (!remoteUsable(useRepos.getState().health)) return
+      if (useRepos.getState().busy.size > 0) return
+      runOpAll('fetch')
+    }, minutes * 60_000)
+    return () => clearInterval(id)
+  }, [settings?.autoFetchEnabled, settings?.autoFetchMinutes, runOpAll])
+
+  const filtered = useMemo(
+    () => filterRepos(repos, groupFilter, query, selected),
+    [repos, groupFilter, query, selected],
+  )
+
+  // With no group filter chosen, repos are shown under their group headings so
+  // the grouping is visible without having to filter to see it.
+  const sections = useMemo(() => {
+    if (groupFilter) return [{ name: '', repos: filtered }]
+
+    const byGroup = new Map<string, RepoView[]>()
+    for (const r of filtered) {
+      const key = r.group || ''
+      const list = byGroup.get(key)
+      list ? list.push(r) : byGroup.set(key, [r])
+    }
+    const named = [...byGroup.entries()]
+      .filter(([name]) => name !== '')
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, list]) => ({ name, repos: list }))
+    const rest = byGroup.get('') ?? []
+
+    if (named.length === 0) return [{ name: '', repos: filtered }]
+    return [...named, ...(rest.length ? [{ name: 'Ungrouped', repos: rest }] : [])]
+  }, [filtered, groupFilter])
+
+  const totals = useMemo(() => {
+    let ahead = 0
+    let dirty = 0
+    for (const r of repos) {
+      ahead += r.status.ahead || 0
+      if (r.status.staged + r.status.unstaged + r.status.untracked > 0) dirty++
+    }
+    return { ahead, dirty }
+  }, [repos])
+
+  const ungroupedCount = repos.filter((r) => !r.group).length
+
+  // The compact panel is the same window, so it swaps the whole tree rather
+  // than opening a second one — Wails v2 gives an app exactly one window.
+  if (mode === 'mini') {
     return (
-        <div id="App">
-            <img src={logo} id="logo" alt="logo"/>
-            <div id="result" className="result">{resultText}</div>
-            <div id="input" className="input-box">
-                <input id="name" className="input" onChange={updateName} autoComplete="off" name="input" type="text"/>
-                <button className="btn" onClick={greet}>Greet</button>
-            </div>
-        </div>
+      <>
+        <MiniPanel />
+        <Toasts />
+      </>
     )
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-surface text-ink">
+      <TitleBar
+        right={
+          <>
+            <GitHubStatusPill />
+            <span className="text-[11.5px] text-ink-faint">
+              {repos.length} repositor{repos.length === 1 ? 'y' : 'ies'}
+            </span>
+          </>
+        }
+      />
+
+      <ConnectivityBanner />
+      <BulkStrip />
+
+      {env && !env.gitFound && (
+        <Banner>
+          <TriangleAlert size={14} className="shrink-0 text-conflict" />
+          <span>
+            <b>git was not found on your PATH.</b> GitDeck shells out to git for everything, so
+            nothing will work until it is installed.
+          </span>
+        </Banner>
+      )}
+      {env?.storeError && (
+        <Banner>
+          <TriangleAlert size={14} className="shrink-0 text-behind" />
+          <span>Settings could not be saved: {env.storeError}</span>
+        </Banner>
+      )}
+
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+        <div className="relative flex-1">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint"
+          />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by name, path or branch…"
+            className="selectable w-full rounded-md border border-line bg-[rgba(255,255,255,0.04)] py-1.5 pl-8 pr-3 text-[12.5px] text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
+          />
+        </div>
+
+        <ToolbarButton onClick={addRepo} icon={<FolderPlus size={13} />} label="Add repo" />
+        <ToolbarButton
+          onClick={startScan}
+          icon={<FolderSearch size={13} />}
+          label="Scan folder"
+        />
+        <ToolbarButton
+          onClick={() => runOpAll('fetch')}
+          icon={<DownloadCloud size={13} className={busyCount > 0 ? 'animate-spin-slow' : ''} />}
+          label={groupFilter ? 'Fetch group' : 'Fetch all'}
+          disabled={!remoteUsable(health)}
+          title={remoteUsable(health) ? undefined : health?.message}
+        />
+        <ToolbarButton
+          onClick={refresh}
+          icon={<RefreshCw size={13} className={loading ? 'animate-spin-slow' : ''} />}
+          label="Refresh"
+        />
+        <button
+          onClick={enterMini}
+          title="Shrink to the tray panel"
+          aria-label="Shrink to the tray panel"
+          className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-md border border-line bg-[rgba(255,255,255,0.04)] text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+        >
+          <Minimize2 size={13} />
+        </button>
+        <button
+          onClick={toggleSettings}
+          title="Settings"
+          aria-label="Settings"
+          className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-md border border-line bg-[rgba(255,255,255,0.04)] text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+        >
+          <SettingsIcon size={13} />
+        </button>
+      </div>
+
+      {groups.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-3 py-1.5">
+          <GroupChip
+            label="All"
+            count={repos.length}
+            active={groupFilter === ''}
+            onClick={() => setGroupFilter('')}
+          />
+          {groups.map((g) => (
+            <GroupChip
+              key={g}
+              label={g}
+              count={repos.filter((r) => r.group === g).length}
+              active={groupFilter === g}
+              onClick={() => setGroupFilter(g)}
+            />
+          ))}
+          {ungroupedCount > 0 && (
+            <GroupChip
+              label="Ungrouped"
+              count={ungroupedCount}
+              active={groupFilter === UNGROUPED}
+              onClick={() => setGroupFilter(UNGROUPED)}
+            />
+          )}
+          {selected.size > 0 && (
+            <GroupChip
+              label="Selected"
+              count={selected.size}
+              active={groupFilter === SELECTED}
+              onClick={() => setGroupFilter(groupFilter === SELECTED ? '' : SELECTED)}
+            />
+          )}
+          <NewGroupButton />
+          <TreeToggle />
+        </div>
+      )}
+
+      {groups.length === 0 && repos.length > 0 && (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1.5">
+          <NewGroupButton />
+          <TreeToggle />
+          <span className="text-[11px] text-ink-faint">
+            Tick repositories on the left, then group them.
+          </span>
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-accent-dim px-3 py-1.5 text-[11.5px]">
+          <span className="font-medium text-accent">{selected.size} selected</span>
+          <button
+            onClick={() => selectVisible(filtered.map((r) => r.path))}
+            className="rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            {filtered.every((r) => selected.has(r.path)) ? 'Deselect visible' : 'Select visible'}
+          </button>
+          <span className="text-ink-faint">·</span>
+          <button
+            onClick={() => openGroupDialog([...selected])}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            <FolderTree size={11} />
+            Move to group
+          </button>
+          <button
+            onClick={() => runOpAll('fetch')}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            <DownloadCloud size={11} />
+            Fetch
+          </button>
+          <button
+            onClick={() => runOpAll('sync')}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-soft hover:bg-surface-hover hover:text-ink"
+          >
+            <RefreshCw size={11} />
+            Sync
+          </button>
+          <button
+            onClick={clearSelection}
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+          >
+            <X size={11} />
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* The changes panel covers the list rather than replacing it, so the
+          scroll position and filters survive a round trip. */}
+      <div className="relative min-h-0 flex-1">
+        <RepoDetail />
+        <main className="h-full overflow-y-auto">
+        {loading && repos.length === 0 ? (
+          <LoadingState />
+        ) : repos.length === 0 ? (
+          <EmptyState onAdd={addRepo} onScan={startScan} />
+        ) : filtered.length === 0 ? (
+          <div className="px-4 py-16 text-center text-[12.5px] text-ink-faint">
+            No repository matches this filter.
+          </div>
+        ) : (
+          sections.map((section) => (
+            <section key={section.name || '__all__'}>
+              {section.name && (
+                <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-surface-raised/90 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint backdrop-blur">
+                  {section.name}
+                  <span className="text-ink-faint/70">{section.repos.length}</span>
+                </div>
+              )}
+              {section.repos.map((r) => (
+                <RepoRow key={r.path} repo={r} />
+              ))}
+            </section>
+          ))
+          )}
+        </main>
+      </div>
+
+      <LogDrawer />
+
+      <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line px-3 text-[11px] text-ink-faint">
+        <span>{totals.dirty} with changes</span>
+        <span>{totals.ahead} commits to push</span>
+        <button
+          onClick={toggleLog}
+          title="Show the raw output of every git command GitDeck has run"
+          className="flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-surface-hover hover:text-ink"
+        >
+          <Terminal size={11} />
+          Git output
+          {logCount > 0 && (
+            <span className={logFailures > 0 ? 'text-conflict' : 'text-ink-faint'}>
+              ({logCount}
+              {logFailures > 0 ? `, ${logFailures} failed` : ''})
+            </span>
+          )}
+        </button>
+        {env?.gitVersion && <span className="ml-auto font-mono">git {env.gitVersion}</span>}
+      </footer>
+
+      <ScanDialog />
+      <GroupDialog />
+      <BranchPicker />
+      <WorktreeDialog />
+      <SettingsDialog />
+      <Toasts />
+    </div>
+  )
 }
 
-export default App
+/** Creating a group is just naming one, so this opens the same dialog the
+ *  per-repo menu does — pointed at whatever is currently ticked. */
+function NewGroupButton() {
+  const selected = useRepos((s) => s.selected)
+  const openGroupDialog = useRepos((s) => s.openGroupDialog)
+  const toast = useRepos((s) => s.toast)
+
+  return (
+    <button
+      onClick={() => {
+        if (selected.size === 0) {
+          toast('info', 'Tick the repositories you want, then press New group.')
+          return
+        }
+        openGroupDialog([...selected])
+      }}
+      title="Put the selected repositories into a new or existing group"
+      className="flex items-center gap-1 rounded-full border border-dashed border-line-strong px-2.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:border-accent hover:text-accent"
+    >
+      <Plus size={11} />
+      New group
+    </button>
+  )
+}
+
+/** Expand or collapse every worktree tree at once. Hidden when nothing has
+ *  worktrees, since an empty control is just clutter. */
+function TreeToggle() {
+  const repos = useRepos((s) => s.repos)
+  const expanded = useRepos((s) => s.expanded)
+  const setAllExpanded = useRepos((s) => s.setAllExpanded)
+
+  const withTrees = repos.filter((r) => r.worktrees?.length)
+  if (withTrees.length === 0) return null
+
+  const allOpen = withTrees.every((r) => expanded.has(r.path))
+
+  return (
+    <button
+      onClick={() => setAllExpanded(!allOpen)}
+      title={allOpen ? 'Collapse every worktree tree' : 'Expand every worktree tree'}
+      className="flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:border-line-strong hover:text-ink"
+    >
+      {allOpen ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
+      {allOpen ? 'Collapse trees' : 'Expand trees'}
+    </button>
+  )
+}
+
+function GroupChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors ' +
+        (active
+          ? 'border-accent/50 bg-accent-dim text-accent'
+          : 'border-line text-ink-soft hover:border-line-strong hover:text-ink')
+      }
+    >
+      {label}
+      <span className={active ? 'text-accent/70' : 'text-ink-faint'}>{count}</span>
+    </button>
+  )
+}
+
+function Banner({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-[rgba(242,96,122,0.08)] px-3 py-2 text-[12px] text-ink-soft">
+      {children}
+    </div>
+  )
+}
+
+function ToolbarButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  title,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  title?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line disabled:hover:text-ink-soft"
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+/** Skeleton rows: reading N repos costs a few git spawns each, so the first
+ *  paint after launch is never instant. */
+function LoadingState() {
+  return (
+    <div className="animate-fade-in">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 border-b border-line px-4 py-3">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[rgba(255,255,255,0.12)]" />
+          <div className="flex-1 space-y-1.5">
+            <div
+              className="h-2.5 rounded bg-[rgba(255,255,255,0.08)]"
+              style={{ width: `${120 + ((i * 37) % 90)}px` }}
+            />
+            <div
+              className="h-2 rounded bg-[rgba(255,255,255,0.05)]"
+              style={{ width: `${200 + ((i * 53) % 140)}px` }}
+            />
+          </div>
+          <div className="h-5 w-20 rounded-md bg-[rgba(255,255,255,0.06)]" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EmptyState({ onAdd, onScan }: { onAdd: () => void; onScan: () => void }) {
+  return (
+    <div className="grid h-full place-items-center px-6 py-16">
+      <div className="max-w-[380px] text-center">
+        <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-accent-dim">
+          <GitBranch size={20} className="text-accent" />
+        </div>
+        <h2 className="mb-1.5 text-[15px] font-semibold">No repositories yet</h2>
+        <p className="mb-5 text-[12.5px] leading-relaxed text-ink-faint">
+          Add a single repository, or point GitDeck at a folder like{' '}
+          <code className="font-mono text-ink-soft">C:\Users\you\Projects</code> and it will find
+          every repo underneath.
+        </p>
+        <div className="flex justify-center gap-2">
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12.5px] font-medium text-[#0b0e14] hover:opacity-90"
+          >
+            <FolderPlus size={13} />
+            Add repository
+          </button>
+          <button
+            onClick={onScan}
+            className="flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[12.5px] text-ink-soft hover:border-line-strong hover:text-ink"
+          >
+            <FolderSearch size={13} />
+            Scan a folder
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -36,7 +36,9 @@ instead of ~180 MB.
 the features that use them, and the app detects and reports their absence rather than failing
 silently.
 
-**Shipped size:** ~8 MB installer → ~15 MB installed → ~50 MB RAM idle, ~0.4 s cold start.
+**Shipped size (measured):** 6.6 MB installer, 12.2 MB exe, ~2.2 s cold start,
+~420 MB idle across 7 processes. The RAM estimate in this plan was wrong: WebView2
+is Chromium and starts six processes. The small binary buys disk, not memory.
 
 ---
 
@@ -124,7 +126,7 @@ one bound-method call returning a Go struct that serialises to
 | Pull | `git pull --ff-only`, falling back to a rebase/merge prompt |
 | Push | `git push`, auto `-u origin <branch>` when there is no upstream |
 | Sync | fetch → pull → push |
-| Pull from main | `git fetch origin main && git merge origin/main` (rebase configurable) |
+| Pull from main | `git fetch origin main && git merge origin/main` (merge — confirmed decision) |
 | Publish branch | `git push -u origin HEAD` |
 | Checkout / create branch | branch picker with search |
 | Stage / unstage / discard | per file and all |
@@ -138,7 +140,7 @@ strip so one failure never hides the others.
 
 ### Diff and history
 - Changed-files list with A/M/D badges
-- Side-by-side or inline diff via Monaco — runs fine in WebView2
+- Unified diff rendered in-app (no Monaco: it would add megabytes to a 12 MB app for a read-only view)
 - Commit log for the current branch, 50 at a time, click through to the full diff
 
 ### GitHub connectivity (explicit requirement)
@@ -198,15 +200,15 @@ UI response:
 
 | Phase | Deliverable |
 |---|---|
-| **0** | ✅ Go + Wails installed and verified. Next: `git init`, branch `feat/gitdeck-mvp`, `wails init` with the React-TS template, add Tailwind + shadcn, hello window |
-| **1** | Repo store, add/remove/scan, repo list with live status (branch, ahead/behind, dirty) |
-| **2** | Core ops: fetch, pull, push, sync, pull-from-main — single repo, with error surfacing |
-| **3** | GitHub connectivity probe, banner, disabled-state wiring |
-| **4** | Changes panel: stage / unstage / discard / commit / stash, plus Monaco diff |
-| **5** | Worktree tree, branch picker, history log |
-| **6** | Tray, autostart, bulk multi-repo ops |
-| **7** | Polish: Mica, animations, empty states, settings screen |
-| **8** | `wails build -nsis` → installer + portable build; GitHub-releases update check |
+| **0** | ✅ Toolchain installed, scaffold built, first binary produced |
+| **1** | ✅ Repo store, add/remove/scan, live status, worktree nesting, groups, multi-select |
+| **2** | ✅ Core ops: fetch, pull, push, sync, pull-from-main, with error surfacing |
+| **3** | ✅ GitHub connectivity probe, banner, disabled-state wiring |
+| **4** | ✅ Changes panel: stage / unstage / discard / commit / amend / stash, plus a built-in diff view |
+| **5** | ✅ Worktree tree with add/remove, branch picker, history log |
+| **6** | ✅ Tray with badge, autostart, close-to-tray, settings, bulk ops with progress, background fetch |
+| **7** | ✅ Polish: focus rings, reduced-motion, empty states, drag-to-reorder, open-on-web, window title, dead code removed |
+| **8** | ✅ `wails build -nsis` → installer + portable build; GitHub-releases update check |
 
 Phases 0–3 already give a genuinely usable app. Each phase ends in a commit and a push.
 
@@ -217,7 +219,7 @@ Phases 0–3 already give a genuinely usable app. Each phase ends in a commit an
 1. **Tray is third-party** — Wails v2 has no built-in tray (v3 does). `energye/systray` is pure Go
    on Windows, but it is the one dependency most likely to need attention. Phase 6 proves it early
    enough to swap if needed. Global hotkeys are explicitly out of scope.
-2. **Pull-from-main default** — merge or rebase? The plan assumes **merge**, configurable per repo.
+2. **Pull-from-main default** — merge or rebase? **Decided: merge.** Rebase may be added later as a per-repo option.
 3. **Credential prompts** — a push needing credentials can block invisibly. Mitigation: run every
    remote op with `GIT_TERMINAL_PROMPT=0` and a 30 s timeout, then surface a clear
    "authentication required" error instead of hanging forever.
