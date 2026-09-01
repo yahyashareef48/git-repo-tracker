@@ -38,9 +38,15 @@ type App struct {
 	quitting atomic.Bool
 	// mini is true while the window is the compact tray panel.
 	mini atomic.Bool
-	// The full window's geometry, remembered across a trip through mini mode.
-	geoMu                      sync.Mutex
-	fullW, fullH, fullX, fullY int
+	// The full window's size, remembered across a trip through mini mode.
+	// Size only: positions are never stored or restored, see EnterMini.
+	geoMu        sync.Mutex
+	fullW, fullH int
+	// hasGeo is false until a genuinely full-sized window has been measured.
+	hasGeo bool
+	// fullMaximised remembers a maximised window, which has no meaningful
+	// size or position of its own to restore.
+	fullMaximised bool
 }
 
 // RepoView is one row of the repo list: the tracked entry, its status, and any
@@ -657,38 +663,51 @@ func (a *App) startTray() {
 // --- Mini panel -------------------------------------------------------------
 
 // Wails v2 gives an app exactly one window, so the compact tray panel is this
-// same window resized, repositioned and pinned on top — not a second one.
+// same window resized and pinned on top — not a second one.
 const (
 	miniWidth  = 400
 	miniHeight = 540
-	// screenMargin keeps the panel clear of the screen edge, and enough above
-	// the bottom to clear a typical taskbar.
-	screenMargin = 16
-	taskbarClear = 56
+	fullMinW   = 880
+	fullMinH   = 560
 )
 
 // IsMini reports whether the window is currently the compact panel.
 func (a *App) IsMini() bool { return a.mini.Load() }
 
-// EnterMini shrinks the window into a tray-side panel: small, always on top,
-// parked in the bottom-right corner.
+// EnterMini shrinks the window into a tray-side panel, pinned on top.
+//
+// The window is resized in place — its top-left corner does not move, and no
+// position is ever computed. That is deliberate. Wails reports screen sizes
+// without their offsets, and this machine (like many) has a second monitor at
+// a different DPI, so any absolute coordinate we calculate is in the wrong
+// space and throws the window onto another display or off the desktop. Growing
+// and shrinking from a corner that is already on screen cannot do that.
 func (a *App) EnterMini() {
 	ctx := a.context()
-	if !a.mini.Load() {
-		// Remember the real window so leaving mini mode restores it exactly.
+
+	// Windows ignores a resize while a window is maximised: the panel would
+	// silently stay full-screen and only appear to move. Un-maximise first,
+	// which also reveals the size actually worth restoring later.
+	maximised := runtime.WindowIsMaximised(ctx)
+	if maximised {
+		runtime.WindowUnmaximise(ctx)
+	}
+
+	w, h := runtime.WindowGetSize(ctx)
+	if !a.mini.Load() && w >= fullMinW && h >= fullMinH {
+		// Guarded on size: after a restart the window can already be
+		// panel-sized, and recording that as "full" would shrink it forever.
 		a.geoMu.Lock()
-		a.fullW, a.fullH = runtime.WindowGetSize(ctx)
-		a.fullX, a.fullY = runtime.WindowGetPosition(ctx)
+		a.fullW, a.fullH = w, h
+		a.hasGeo = true
+		a.fullMaximised = maximised
 		a.geoMu.Unlock()
 	}
 
-	// The window's configured minimum is far larger than the panel, so it has
-	// to be relaxed before the resize will take.
+	// The configured minimum is far larger than the panel, so it has to be
+	// relaxed before the resize will take.
 	runtime.WindowSetMinSize(ctx, 320, 360)
 	runtime.WindowSetSize(ctx, miniWidth, miniHeight)
-
-	x, y := miniPosition(ctx)
-	runtime.WindowSetPosition(ctx, x, y)
 	runtime.WindowSetAlwaysOnTop(ctx, true)
 
 	a.mini.Store(true)
@@ -696,24 +715,22 @@ func (a *App) EnterMini() {
 	runtime.EventsEmit(ctx, "window:mode", "mini")
 }
 
-// ExitMini restores the full window.
+// ExitMini restores the full window, in place.
 func (a *App) ExitMini() {
 	ctx := a.context()
 	runtime.WindowSetAlwaysOnTop(ctx, false)
-	runtime.WindowSetMinSize(ctx, 880, 560)
+	runtime.WindowSetMinSize(ctx, fullMinW, fullMinH)
 
 	a.geoMu.Lock()
-	w, h, x, y := a.fullW, a.fullH, a.fullX, a.fullY
+	w, h, maximised := a.fullW, a.fullH, a.fullMaximised
 	a.geoMu.Unlock()
 
-	if w < 880 || h < 560 {
+	if w < fullMinW || h < fullMinH {
 		w, h = 1180, 780
 	}
 	runtime.WindowSetSize(ctx, w, h)
-	if x != 0 || y != 0 {
-		runtime.WindowSetPosition(ctx, x, y)
-	} else {
-		runtime.WindowCenter(ctx)
+	if maximised {
+		runtime.WindowMaximise(ctx)
 	}
 
 	a.mini.Store(false)
@@ -729,26 +746,4 @@ func (a *App) ToggleMiniPanel() {
 		return
 	}
 	a.EnterMini()
-}
-
-// miniPosition parks the panel in the bottom-right of the current screen.
-// Wails reports screen sizes but not their offsets, so on a multi-monitor
-// setup the panel lands on the primary screen's coordinate space.
-func miniPosition(ctx context.Context) (int, int) {
-	w, h := 1920, 1080
-	if screens, err := runtime.ScreenGetAll(ctx); err == nil {
-		for _, s := range screens {
-			if s.IsCurrent || s.IsPrimary {
-				if s.Size.Width > 0 {
-					w, h = s.Size.Width, s.Size.Height
-				} else if s.Width > 0 {
-					w, h = s.Width, s.Height
-				}
-				if s.IsCurrent {
-					break
-				}
-			}
-		}
-	}
-	return w - miniWidth - screenMargin, h - miniHeight - taskbarClear
 }
