@@ -1,13 +1,81 @@
 # GitDeck
 
-A Windows desktop app that tracks every local git repository you care about and
-gives you what the VS Code Git panel gives you — sync, pull, push, pull from
-main, branches, staging, stashes, history, worktrees — from one window, plus a
-tray panel for a glance without switching context.
+**One window for every local repository and worktree you have open.**
 
-Built with [Wails v2](https://wails.io): a Go core and a React frontend rendered
-by the WebView2 already on your machine. The result is a ~12 MB exe, not a
-bundled browser.
+---
+
+## Why this exists
+
+Agentic engineering breaks the assumption every git UI is built on: that you are
+in one repository, on one branch, doing one thing.
+
+In practice an agent is editing three repos while you review a fourth. Work gets
+parked in linked worktrees so several branches can be live at once. You come back
+after twenty minutes of deep work and the honest answer to *what changed?* is: no
+idea. Which repos are dirty. Which branches never got pushed. Which worktree that
+half-finished change is sitting in. Whether anything is behind `main` now.
+
+Finding out means a terminal, `cd`, `git status`, `cd`, `git status`, again and
+again — or a VS Code window per repository. Both cost exactly the focus you were
+trying to protect.
+
+GitDeck answers that question at a glance and lets you act on it without leaving:
+every tracked repo and worktree on one screen, with the one button each of them
+actually needs.
+
+## What it does
+
+It is a git client scoped to *many repositories at once* rather than one:
+
+- **Everything at once.** Repos and their linked worktrees in a single tree, each
+  with its branch, ahead/behind, uncommitted count and stash count.
+- **The obvious action.** One button per row that reads the state and offers
+  Publish, Pull, Push or Sync — whichever that repo needs right now.
+- **Grouped and filtered.** Group by client or project, tick an ad-hoc set, and
+  act on just those.
+- **Real git work.** Stage, commit, amend, stash, discard, switch and create
+  branches, add and remove worktrees, read any commit's diff — without opening an
+  editor.
+- **A tray panel.** Left-click the tray for a compact list scoped to the repos or
+  group you chose. Deep in something else, one glance tells you if anything needs
+  you.
+- **Honest about failure.** It checks whether GitHub is actually reachable and
+  disables remote actions with a reason when it is not, instead of letting each
+  push fail on its own. Every git command it runs, and that command's real
+  output, is one click away.
+
+## How it works
+
+[Wails v2](https://wails.io): a Go core with a React frontend rendered by the
+WebView2 runtime already present on Windows, so no browser is bundled — the app
+is a ~12 MB exe rather than ~180 MB.
+
+Every git operation shells out to **git's own CLI**. No libgit2, no reimplemented
+plumbing: behaviour is exactly what you would get in a terminal, and stderr goes
+straight to the log drawer instead of being paraphrased. GitHub connectivity is
+checked through `gh`, reusing the credentials you already set up.
+
+GitDeck never handles your credentials. Every git and `gh` call runs with
+`GIT_TERMINAL_PROMPT=0` and no editor, so it fails with a clear message rather
+than hanging on a prompt you cannot see. Signing in is `gh auth login`, in your
+own terminal.
+
+### Footprint
+
+Measured on a release build, ten repositories tracked:
+
+| | |
+|---|---|
+| Portable exe | **12.2 MB** |
+| Installer | **6.6 MB** |
+| Cold start to window | **~2.2 s** |
+| Memory, idle | **~420 MB** working set across 7 processes (~360 MB private) |
+
+That memory figure deserves a caveat, because it is the one thing about this
+stack that is routinely undersold: the 12 MB binary is real, but WebView2 is
+Chromium, and it starts six processes like any browser tab would. The small
+binary buys disk space and download size, not RAM. If that matters more than
+everything else here, a native UI toolkit is the honest answer.
 
 ---
 
@@ -62,6 +130,9 @@ Download `gitdeck-amd64-installer.exe` from the
 **Requirements:** Windows 10 1803+ or Windows 11 (for WebView2, which ships with
 both), and `git` on your PATH. `gh` is optional — without it GitDeck simply says
 it cannot check GitHub's status.
+
+The installer is NSIS, not MSI: it is a signed-by-nobody `.exe`, so SmartScreen
+will warn on first run. "More info" → "Run anyway", or use the portable exe.
 
 ---
 
