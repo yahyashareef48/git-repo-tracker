@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -150,7 +151,19 @@ func (a *App) ListRepos() []RepoView {
 
 	// The list is refreshed on launch, on focus and after every operation, so
 	// this is the natural place to keep the tray honest.
-	tray.SetStatus(trayCounts(views))
+	counts := trayCounts(views)
+	tray.SetStatus(counts)
+
+	// The window is frameless, but the title is still what the taskbar and
+	// alt-tab show, so it carries the same summary.
+	title := "GitDeck"
+	if counts.Unpushed > 0 {
+		title += " — " + strconv.Itoa(counts.Unpushed) + " to push"
+	} else if counts.Dirty > 0 {
+		title += " — " + strconv.Itoa(counts.Dirty) + " with changes"
+	}
+	runtime.WindowSetTitle(a.context(), title)
+
 	return views
 }
 
@@ -534,9 +547,10 @@ func (a *App) GetCommitDiff(path, sha, file string) gitx.Diff {
 	return gitx.CommitFileDiff(a.context(), path, sha, file)
 }
 
-// ListWorktrees returns the worktrees attached to a repo.
-func (a *App) ListWorktrees(path string) []gitx.Worktree {
-	return gitx.ListWorktrees(a.context(), path)
+// RepoWebURL returns the browsable https URL for a repo's remote, or "" when
+// there is nothing a browser could open.
+func (a *App) RepoWebURL(path string) string {
+	return gitx.WebURL(a.context(), path)
 }
 
 // AddWorktree creates a linked worktree, optionally on a new branch.

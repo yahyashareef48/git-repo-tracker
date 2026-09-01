@@ -55,8 +55,6 @@ export function ListGroups():Promise<Array<string>>;
 
 export function ListRepos():Promise<Array<main.RepoView>>;
 
-export function ListWorktrees(arg1:string):Promise<Array<gitx.Worktree>>;
-
 export function OpenIn(arg1:string,arg2:string):Promise<void>;
 
 export function OpenURL(arg1:string):Promise<void>;
@@ -68,6 +66,8 @@ export function RemoveRepo(arg1:string):Promise<void>;
 export function RemoveWorktree(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
 
 export function Reorder(arg1:Array<string>):Promise<void>;
+
+export function RepoWebURL(arg1:string):Promise<string>;
 
 export function RunOp(arg1:string,arg2:string):Promise<Array<gitx.OpResult>>;
 

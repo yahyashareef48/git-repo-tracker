@@ -309,32 +309,6 @@ export namespace gitx {
 	        this.error = source["error"];
 	    }
 	}
-	export class Worktree {
-	    path: string;
-	    name: string;
-	    head: string;
-	    branch: string;
-	    detached: boolean;
-	    bare: boolean;
-	    locked: boolean;
-	    isMain: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new Worktree(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.path = source["path"];
-	        this.name = source["name"];
-	        this.head = source["head"];
-	        this.branch = source["branch"];
-	        this.detached = source["detached"];
-	        this.bare = source["bare"];
-	        this.locked = source["locked"];
-	        this.isMain = source["isMain"];
-	    }
-	}
 
 }
 

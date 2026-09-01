@@ -34,7 +34,7 @@ export function Toasts() {
         return (
           <div
             key={t.id}
-            className="animate-fade-in pointer-events-auto flex w-full items-start gap-2 rounded-lg border border-line-strong bg-surface-raised px-2.5 py-2 shadow-xl backdrop-blur-xl"
+            className="animate-slide-in pointer-events-auto flex w-full items-start gap-2 rounded-lg border border-line-strong bg-surface-raised px-2.5 py-2 shadow-xl backdrop-blur-xl"
           >
             <Icon size={13} className={'mt-[2px] shrink-0 ' + cls} />
 

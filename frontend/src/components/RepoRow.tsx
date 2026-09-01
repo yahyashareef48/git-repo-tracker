@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderTree,
   GitBranch,
+  Globe,
   GitMerge,
   MoreHorizontal,
   Pin,
@@ -20,7 +21,8 @@ import {
   TreeDeciduous,
   TriangleAlert,
 } from 'lucide-react'
-import { OpenIn, RemoveWorktree } from '../../wailsjs/go/main/App'
+import { useState } from 'react'
+import { OpenIn, OpenURL, RemoveWorktree, RepoWebURL } from '../../wailsjs/go/main/App'
 import type { gitx } from '../../wailsjs/go/models'
 import { useDetail } from '../store/detail'
 import { remoteUsable, useRepos, type RepoView } from '../store/repos'
@@ -50,6 +52,10 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const openDetail = useDetail((s) => s.openDetail)
   const openBranchPicker = useRepos((s) => s.openBranchPicker)
   const openWorktreeDialog = useRepos((s) => s.openWorktreeDialog)
+  const dragging = useRepos((s) => s.dragging)
+  const setDragging = useRepos((s) => s.setDragging)
+  const reorder = useRepos((s) => s.reorder)
+  const [dropTarget, setDropTarget] = useState(false)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -186,8 +192,33 @@ export function RepoRow({ repo }: { repo: RepoView }) {
           that expands worktrees, so the two never fight over one click. */}
       <div
         onClick={() => openDetail(repo.path)}
-        title="Open changes"
-        className="group flex cursor-pointer items-center gap-2 px-2 py-2 transition-colors hover:bg-surface-hover"
+        title="Open changes — drag to reorder"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          setDragging(repo.path)
+        }}
+        onDragEnd={() => {
+          setDragging(null)
+          setDropTarget(false)
+        }}
+        onDragOver={(e) => {
+          if (!dragging || dragging === repo.path) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          setDropTarget(true)
+        }}
+        onDragLeave={() => setDropTarget(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDropTarget(false)
+          if (dragging) reorder(dragging, repo.path)
+        }}
+        className={
+          'group flex cursor-pointer items-center gap-2 px-2 py-2 transition-colors hover:bg-surface-hover ' +
+          (dragging === repo.path ? 'opacity-40 ' : '') +
+          (dropTarget ? 'border-t-2 border-t-accent' : 'border-t-2 border-t-transparent')
+        }
       >
         {/* Ticking rows is how you build an ad-hoc set: filter to it, or group
             it in one go. Hidden until hovered so the list stays calm. */}

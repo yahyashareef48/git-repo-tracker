@@ -102,10 +102,6 @@ export function ListRepos() {
   return window['go']['main']['App']['ListRepos']();
 }
 
-export function ListWorktrees(arg1) {
-  return window['go']['main']['App']['ListWorktrees'](arg1);
-}
-
 export function OpenIn(arg1, arg2) {
   return window['go']['main']['App']['OpenIn'](arg1, arg2);
 }
@@ -128,6 +124,10 @@ export function RemoveWorktree(arg1, arg2, arg3) {
 
 export function Reorder(arg1) {
   return window['go']['main']['App']['Reorder'](arg1);
+}
+
+export function RepoWebURL(arg1) {
+  return window['go']['main']['App']['RepoWebURL'](arg1);
 }
 
 export function RunOp(arg1, arg2) {

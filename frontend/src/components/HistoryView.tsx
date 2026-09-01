@@ -36,12 +36,17 @@ function CommitList() {
 
   return (
     <div className="w-[320px] shrink-0 overflow-y-auto">
-      {commits.length === 0 && loading && (
-        <div className="flex items-center justify-center gap-2 py-10 text-[12.5px] text-ink-faint">
-          <Loader2 size={14} className="animate-spin-slow" />
-          Reading history…
-        </div>
-      )}
+      {commits.length === 0 &&
+        (loading ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-[12.5px] text-ink-faint">
+            <Loader2 size={14} className="animate-spin-slow" />
+            Reading history…
+          </div>
+        ) : (
+          <div className="px-4 py-10 text-center text-[12.5px] text-ink-faint">
+            No commits on this branch yet.
+          </div>
+        ))}
 
       {commits.map((c) => {
         const active = c.sha === sha

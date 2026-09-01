@@ -15,6 +15,7 @@ import {
   ListRepos,
   ListGroups,
   RemoveRepo,
+  Reorder,
   RunOp,
   ScanFolder,
   SaveSettings,
@@ -184,6 +185,11 @@ type State = {
   closeGroupDialog: () => void
   setGroup: (paths: string[], group: string) => Promise<void>
 
+  /** Path being dragged, for the reorder affordance. */
+  dragging: string | null
+  setDragging: (path: string | null) => void
+  reorder: (fromPath: string, toPath: string) => Promise<void>
+
   toggleSelected: (path: string) => void
   selectVisible: (paths: string[]) => void
   clearSelection: () => void
@@ -261,6 +267,7 @@ export const useRepos = create<State>((set, get) => ({
   branchTarget: null,
   worktreeTarget: null,
   selected: new Set<string>(),
+  dragging: null,
 
   async init() {
     try {
@@ -506,6 +513,36 @@ export const useRepos = create<State>((set, get) => ({
       get().toast('success', group ? `Moved ${what} to “${group}”` : `Ungrouped ${what}`)
     } catch (e) {
       get().toast('error', message(e))
+    }
+  },
+
+  setDragging(path) {
+    set({ dragging: path })
+  },
+
+  async reorder(fromPath, toPath) {
+    if (fromPath === toPath) return
+
+    const order = get().repos.map((r) => r.path)
+    const from = order.indexOf(fromPath)
+    const to = order.indexOf(toPath)
+    if (from < 0 || to < 0) return
+
+    order.splice(to, 0, ...order.splice(from, 1))
+
+    // Reorder optimistically: waiting for a disk write and a full re-read
+    // before the row moves makes dragging feel broken.
+    const byPath = new Map(get().repos.map((r) => [r.path, r]))
+    set({
+      repos: order.map((p) => byPath.get(p)!).filter(Boolean),
+      dragging: null,
+    })
+
+    try {
+      await Reorder(order)
+    } catch (e) {
+      get().toast('error', message(e))
+      await get().refresh()
     }
   },
 
