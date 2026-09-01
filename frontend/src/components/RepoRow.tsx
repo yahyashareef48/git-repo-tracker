@@ -28,6 +28,12 @@ import { BranchPill, Counters, StatusDot } from './Badges'
 import { Menu, type MenuItem } from './Menu'
 import { SyncButton } from './SyncButton'
 
+/** Horizontal centre of the parent row's expand chevron: px-2 padding (8) plus
+ *  the select checkbox (16) plus a gap (8) plus half the chevron (10). */
+const RAIL_X = 42
+/** Vertical centre of a worktree row's content. */
+const ELBOW_Y = 14
+
 export function RepoRow({ repo }: { repo: RepoView }) {
   const expanded = useRepos((s) => s.expanded.has(repo.path))
   const busy = useRepos((s) => s.busy.has(repo.path))
@@ -204,7 +210,12 @@ export function RepoRow({ repo }: { repo: RepoView }) {
         </button>
 
         <button
-          onClick={() => hasChildren && toggleExpanded(repo.path)}
+          onClick={(e) => {
+            // Without this the row's own click handler also fires and opens
+            // the changes panel instead of expanding the tree.
+            e.stopPropagation()
+            if (hasChildren) toggleExpanded(repo.path)
+          }}
           className={
             'grid h-5 w-5 shrink-0 place-items-center rounded transition-transform ' +
             (hasChildren ? 'text-ink-soft hover:bg-surface-hover hover:text-ink ' : 'invisible ') +
@@ -295,15 +306,13 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       </div>
 
       {expanded && hasChildren && (
-        <div className="animate-fade-in relative pb-1">
-          {/* One continuous rail under the chevron ties the children to their
-              parent; each row hangs its own elbow off it. */}
-          <span className="pointer-events-none absolute bottom-3 left-[18px] top-0 w-px bg-line-strong" />
-          {worktrees.map((wt) => (
+        <div className="animate-fade-in pb-1">
+          {worktrees.map((wt, i) => (
             <WorktreeRow
               key={wt.path}
               status={wt}
               parentPath={repo.path}
+              last={i === worktrees.length - 1}
               onOpen={open}
               onOpenDetail={openDetail}
             />
@@ -317,11 +326,13 @@ export function RepoRow({ repo }: { repo: RepoView }) {
 function WorktreeRow({
   status,
   parentPath,
+  last,
   onOpen,
   onOpenDetail,
 }: {
   status: gitx.Status
   parentPath: string
+  last: boolean
   onOpen: (target: string, path: string) => void
   onOpenDetail: (path: string) => void
 }) {
@@ -358,10 +369,19 @@ Remove it anyway and lose them?`)) {
     <div
       onClick={() => onOpenDetail(status.path)}
       title="Open changes"
-      className="group relative flex cursor-pointer items-center gap-2 py-1.5 pl-9 pr-2 transition-colors hover:bg-surface-hover"
+      className="group relative flex cursor-pointer items-center gap-2 py-1.5 pl-[60px] pr-2 transition-colors hover:bg-surface-hover"
     >
-      {/* Elbow off the parent's rail. */}
-      <span className="pointer-events-none absolute left-[18px] top-0 h-[15px] w-[10px] rounded-bl-[4px] border-b border-l border-line-strong" />
+      {/* The connector is drawn per row rather than as one rail behind them
+          all, so it lines up with the parent's chevron whatever the row
+          height turns out to be. RAIL_X is that chevron's centre. */}
+      <span
+        className="pointer-events-none absolute w-px bg-line-strong"
+        style={{ left: RAIL_X, top: 0, height: last ? ELBOW_Y : '100%' }}
+      />
+      <span
+        className="pointer-events-none absolute h-px bg-line-strong"
+        style={{ left: RAIL_X, top: ELBOW_Y, width: 12 }}
+      />
 
       <StatusDot status={status} />
 
