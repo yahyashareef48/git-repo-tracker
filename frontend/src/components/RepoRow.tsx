@@ -9,6 +9,7 @@ import {
   FileDiff,
   FolderOpen,
   FolderTree,
+  GitBranch,
   GitMerge,
   MoreHorizontal,
   Pin,
@@ -16,9 +17,10 @@ import {
   RefreshCw,
   Terminal,
   Trash2,
+  TreeDeciduous,
   TriangleAlert,
 } from 'lucide-react'
-import { OpenIn } from '../../wailsjs/go/main/App'
+import { OpenIn, RemoveWorktree } from '../../wailsjs/go/main/App'
 import type { gitx } from '../../wailsjs/go/models'
 import { useDetail } from '../store/detail'
 import { remoteUsable, useRepos, type RepoView } from '../store/repos'
@@ -40,6 +42,8 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const toggleSelected = useRepos((s) => s.toggleSelected)
   const health = useRepos((s) => s.health)
   const openDetail = useDetail((s) => s.openDetail)
+  const openBranchPicker = useRepos((s) => s.openBranchPicker)
+  const openWorktreeDialog = useRepos((s) => s.openWorktreeDialog)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -134,6 +138,16 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       icon: <FileDiff size={13} />,
       onSelect: () => openDetail(repo.path),
     },
+    {
+      label: 'Switch branch…',
+      icon: <GitBranch size={13} />,
+      onSelect: () => openBranchPicker(repo.path),
+    },
+    {
+      label: 'New worktree…',
+      icon: <TreeDeciduous size={13} />,
+      onSelect: () => openWorktreeDialog(repo.path),
+    },
     { kind: 'separator' },
     {
       label: repo.group ? `Group: ${repo.group}` : 'Move to group…',
@@ -192,8 +206,8 @@ export function RepoRow({ repo }: { repo: RepoView }) {
         <button
           onClick={() => hasChildren && toggleExpanded(repo.path)}
           className={
-            'grid h-5 w-5 shrink-0 place-items-center rounded text-ink-faint transition-transform ' +
-            (hasChildren ? 'hover:text-ink ' : 'invisible ') +
+            'grid h-5 w-5 shrink-0 place-items-center rounded transition-transform ' +
+            (hasChildren ? 'text-ink-soft hover:bg-surface-hover hover:text-ink ' : 'invisible ') +
             (expanded ? 'rotate-90' : '')
           }
           aria-label={expanded ? 'Collapse' : 'Expand'}
@@ -234,7 +248,16 @@ export function RepoRow({ repo }: { repo: RepoView }) {
         ) : (
           <>
             <Counters status={repo.status} />
-            <BranchPill status={repo.status} />
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openBranchPicker(repo.path)
+              }}
+              title="Switch or create a branch"
+              className="shrink-0 rounded transition-opacity hover:opacity-80"
+            >
+              <BranchPill status={repo.status} />
+            </button>
           </>
         )}
 
@@ -272,11 +295,15 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       </div>
 
       {expanded && hasChildren && (
-        <div className="animate-fade-in pb-1">
+        <div className="animate-fade-in relative pb-1">
+          {/* One continuous rail under the chevron ties the children to their
+              parent; each row hangs its own elbow off it. */}
+          <span className="pointer-events-none absolute bottom-3 left-[18px] top-0 w-px bg-line-strong" />
           {worktrees.map((wt) => (
             <WorktreeRow
               key={wt.path}
               status={wt}
+              parentPath={repo.path}
               onOpen={open}
               onOpenDetail={openDetail}
             />
@@ -289,21 +316,53 @@ export function RepoRow({ repo }: { repo: RepoView }) {
 
 function WorktreeRow({
   status,
+  parentPath,
   onOpen,
   onOpenDetail,
 }: {
   status: gitx.Status
+  parentPath: string
   onOpen: (target: string, path: string) => void
   onOpenDetail: (path: string) => void
 }) {
+  const openBranchPicker = useRepos((s) => s.openBranchPicker)
+  const refreshOne = useRepos((s) => s.refreshOne)
+  const toast = useRepos((s) => s.toast)
+
+  const removeWorktree = async (force: boolean) => {
+    const res = await RemoveWorktree(parentPath, status.path, force)
+    const at = new Date().toLocaleTimeString()
+    useRepos.setState((s) => ({
+      log: [...s.log, { ...res, at, repoName: status.name }].slice(-300),
+    }))
+
+    if (res.ok) {
+      toast('success', `Removed worktree ${status.name}`)
+      await refreshOne(parentPath)
+      return
+    }
+    // git refuses while the worktree is dirty; offer the override rather than
+    // making the user find --force themselves.
+    if (!force && /contains modified or untracked files|is dirty/i.test(res.stderr)) {
+      if (window.confirm(`${status.name} has uncommitted changes.
+
+Remove it anyway and lose them?`)) {
+        await removeWorktree(true)
+        return
+      }
+    }
+    toast('error', `Remove worktree failed: ${res.error}`)
+  }
+
   return (
     <div
       onClick={() => onOpenDetail(status.path)}
       title="Open changes"
-      className="group flex cursor-pointer items-center gap-2 py-1.5 pl-9 pr-2 transition-colors hover:bg-surface-hover"
+      className="group relative flex cursor-pointer items-center gap-2 py-1.5 pl-9 pr-2 transition-colors hover:bg-surface-hover"
     >
-      {/* Tree elbow, so children read as belonging to the row above. */}
-      <span className="-ml-3 mr-0.5 h-4 w-3 shrink-0 rounded-bl border-b border-l border-line" />
+      {/* Elbow off the parent's rail. */}
+      <span className="pointer-events-none absolute left-[18px] top-0 h-[15px] w-[10px] rounded-bl-[4px] border-b border-l border-line-strong" />
+
       <StatusDot status={status} />
 
       <div className="min-w-0 flex-1">
@@ -311,14 +370,64 @@ function WorktreeRow({
       </div>
 
       <Counters status={status} />
-      <BranchPill status={status} />
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          openBranchPicker(status.path)
+        }}
+        title="Switch or create a branch"
+        className="shrink-0 rounded transition-opacity hover:opacity-80"
+      >
+        <BranchPill status={status} />
+      </button>
 
       <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <SyncButton status={status} path={status.path} />
         <IconButton label="Reveal in Explorer" onClick={() => onOpen('explorer', status.path)}>
           <FolderOpen size={13} />
         </IconButton>
-        <span className="w-7" />
+        <Menu
+          trigger={({ toggle, open }) => (
+            <button
+              onClick={toggle}
+              aria-label="Worktree actions"
+              className={
+                'grid h-7 w-7 place-items-center rounded text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink ' +
+                (open ? 'bg-surface-hover text-ink' : '')
+              }
+            >
+              <MoreHorizontal size={14} />
+            </button>
+          )}
+          items={[
+            {
+              label: 'Open in VS Code',
+              icon: <Code2 size={13} />,
+              onSelect: () => onOpen('vscode', status.path),
+            },
+            {
+              label: 'Open terminal',
+              icon: <Terminal size={13} />,
+              onSelect: () => onOpen('terminal', status.path),
+            },
+            { kind: 'separator' },
+            {
+              label: 'Remove worktree',
+              icon: <Trash2 size={13} />,
+              danger: true,
+              onSelect: () => {
+                const msg =
+                  `Remove worktree "${status.name}"?
+
+` +
+                  `${status.path}
+
+The folder is deleted. The branch itself is kept.`
+                if (window.confirm(msg)) removeWorktree(false)
+              },
+            },
+          ]}
+        />
       </div>
     </div>
   )

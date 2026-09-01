@@ -120,6 +120,10 @@ type State = {
   groupFilter: string
   /** Repos whose "move to group" dialog is open; empty when closed. */
   groupTargets: string[]
+  /** Repo whose branch picker is open. */
+  branchTarget: string | null
+  /** Repo whose "new worktree" dialog is open. */
+  worktreeTarget: string | null
   /** Repos the user has ticked, for filtering and bulk actions. */
   selected: Set<string>
 
@@ -130,6 +134,11 @@ type State = {
   refreshOne: (path: string) => Promise<void>
   setQuery: (q: string) => void
   toggleExpanded: (path: string) => void
+  setAllExpanded: (on: boolean) => void
+  openBranchPicker: (path: string) => void
+  closeBranchPicker: () => void
+  openWorktreeDialog: (path: string) => void
+  closeWorktreeDialog: () => void
   addRepo: () => Promise<void>
   removeRepo: (path: string) => Promise<void>
   togglePin: (path: string, pinned: boolean) => Promise<void>
@@ -164,6 +173,27 @@ type State = {
 
 let toastSeq = 0
 
+const EXPANDED_KEY = 'gitdeck.expanded'
+
+/** Which repos had their worktrees open last time. Losing this on every launch
+ *  makes the tree feel like it resets itself. */
+function loadExpanded(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_KEY)
+    return new Set<string>(raw ? JSON.parse(raw) : [])
+  } catch {
+    return new Set<string>()
+  }
+}
+
+function saveExpanded(s: Set<string>) {
+  try {
+    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...s]))
+  } catch {
+    // A blocked localStorage is not worth failing a click over.
+  }
+}
+
 // Wails rejects with a plain string for Go errors; normalise both shapes.
 function message(e: unknown): string {
   if (typeof e === 'string') return e
@@ -176,7 +206,7 @@ export const useRepos = create<State>((set, get) => ({
   env: null,
   loading: false,
   query: '',
-  expanded: new Set<string>(),
+  expanded: loadExpanded(),
   busy: new Set<string>(),
   toasts: [],
   scan: null,
@@ -187,6 +217,8 @@ export const useRepos = create<State>((set, get) => ({
   healthChecking: false,
   groupFilter: '',
   groupTargets: [],
+  branchTarget: null,
+  worktreeTarget: null,
   selected: new Set<string>(),
 
   async init() {
@@ -282,8 +314,33 @@ export const useRepos = create<State>((set, get) => ({
     set((s) => {
       const next = new Set(s.expanded)
       next.has(path) ? next.delete(path) : next.add(path)
+      saveExpanded(next)
       return { expanded: next }
     })
+  },
+
+  setAllExpanded(on) {
+    set((s) => {
+      const next = on ? new Set(s.repos.filter((r) => r.worktrees?.length).map((r) => r.path)) : new Set<string>()
+      saveExpanded(next)
+      return { expanded: next }
+    })
+  },
+
+  openBranchPicker(path) {
+    set({ branchTarget: path })
+  },
+
+  closeBranchPicker() {
+    set({ branchTarget: null })
+  },
+
+  openWorktreeDialog(path) {
+    set({ worktreeTarget: path })
+  },
+
+  closeWorktreeDialog() {
+    set({ worktreeTarget: null })
   },
 
   async addRepo() {

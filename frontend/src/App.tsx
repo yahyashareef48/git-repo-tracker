@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
   DownloadCloud,
   FolderPlus,
   FolderSearch,
@@ -12,6 +14,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
+import { BranchPicker } from './components/BranchPicker'
 import { ConnectivityBanner, GitHubStatusPill } from './components/GitHubStatus'
 import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
@@ -20,6 +23,7 @@ import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
 import { TitleBar } from './components/TitleBar'
 import { Toasts } from './components/Toasts'
+import { WorktreeDialog } from './components/WorktreeDialog'
 import {
   filterRepos,
   remoteUsable,
@@ -212,12 +216,14 @@ export default function App() {
             />
           )}
           <NewGroupButton />
+          <TreeToggle />
         </div>
       )}
 
       {groups.length === 0 && repos.length > 0 && (
         <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1.5">
           <NewGroupButton />
+          <TreeToggle />
           <span className="text-[11px] text-ink-faint">
             Tick repositories on the left, then group them.
           </span>
@@ -320,6 +326,8 @@ export default function App() {
 
       <ScanDialog />
       <GroupDialog />
+      <BranchPicker />
+      <WorktreeDialog />
       <Toasts />
     </div>
   )
@@ -346,6 +354,30 @@ function NewGroupButton() {
     >
       <Plus size={11} />
       New group
+    </button>
+  )
+}
+
+/** Expand or collapse every worktree tree at once. Hidden when nothing has
+ *  worktrees, since an empty control is just clutter. */
+function TreeToggle() {
+  const repos = useRepos((s) => s.repos)
+  const expanded = useRepos((s) => s.expanded)
+  const setAllExpanded = useRepos((s) => s.setAllExpanded)
+
+  const withTrees = repos.filter((r) => r.worktrees?.length)
+  if (withTrees.length === 0) return null
+
+  const allOpen = withTrees.every((r) => expanded.has(r.path))
+
+  return (
+    <button
+      onClick={() => setAllExpanded(!allOpen)}
+      title={allOpen ? 'Collapse every worktree tree' : 'Expand every worktree tree'}
+      className="flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:border-line-strong hover:text-ink"
+    >
+      {allOpen ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
+      {allOpen ? 'Collapse trees' : 'Expand trees'}
     </button>
   )
 }

@@ -13,8 +13,10 @@ import {
 } from 'lucide-react'
 import type { gitx } from '../../wailsjs/go/models'
 import { useDetail, type FileRef } from '../store/detail'
+import { useRepos } from '../store/repos'
 import { BranchPill } from './Badges'
 import { DiffView } from './DiffView'
+import { HistoryView } from './HistoryView'
 import { Menu, type MenuItem } from './Menu'
 
 type Change = gitx.Change
@@ -24,6 +26,7 @@ export function RepoDetail() {
   const detail = useDetail((s) => s.detail)
   const loading = useDetail((s) => s.loading)
   const close = useDetail((s) => s.close)
+  const tab = useDetail((s) => s.tab)
 
   useEffect(() => {
     if (!open) return
@@ -45,6 +48,8 @@ export function RepoDetail() {
           <Loader2 size={16} className="animate-spin-slow" />
           Reading working tree…
         </div>
+      ) : tab === 'history' ? (
+        <HistoryView />
       ) : (
         <div className="flex min-h-0 flex-1">
           <FilePanel />
@@ -53,7 +58,7 @@ export function RepoDetail() {
           </div>
         </div>
       )}
-      <CommitBar />
+      {tab === 'changes' && <CommitBar />}
     </div>
   )
 }
@@ -63,6 +68,17 @@ function DetailHeader() {
   const close = useDetail((s) => s.close)
   const reload = useDetail((s) => s.reload)
   const loading = useDetail((s) => s.loading)
+  const tab = useDetail((s) => s.tab)
+  const setTab = useDetail((s) => s.setTab)
+  const openBranchPicker = useRepos((s) => s.openBranchPicker)
+  const repoPath = useDetail((s) => s.repoPath)
+
+  const counts = detail?.changes
+  const changeCount =
+    (counts?.staged?.length ?? 0) +
+    (counts?.unstaged?.length ?? 0) +
+    (counts?.untracked?.length ?? 0) +
+    (counts?.conflicted?.length ?? 0)
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-2">
@@ -76,16 +92,64 @@ function DetailHeader() {
       </button>
 
       <span className="text-[13px] font-semibold">{detail?.name}</span>
-      {detail && <BranchPill status={detail.status} />}
 
-      <button
-        onClick={reload}
-        title="Re-read the working tree"
-        className="ml-auto grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-hover hover:text-ink"
-      >
-        <RotateCcw size={13} className={loading ? 'animate-spin-slow' : ''} />
-      </button>
+      {detail && (
+        <button
+          onClick={() => openBranchPicker(repoPath)}
+          title="Switch or create a branch"
+          className="rounded transition-opacity hover:opacity-80"
+        >
+          <BranchPill status={detail.status} />
+        </button>
+      )}
+
+      <div className="ml-auto flex items-center gap-1">
+        <TabButton active={tab === 'changes'} onClick={() => setTab('changes')}>
+          Changes {changeCount > 0 && <Count>{changeCount}</Count>}
+        </TabButton>
+        <TabButton active={tab === 'history'} onClick={() => setTab('history')}>
+          History
+        </TabButton>
+
+        <button
+          onClick={reload}
+          title="Re-read the working tree"
+          className="ml-1 grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-hover hover:text-ink"
+        >
+          <RotateCcw size={13} className={loading ? 'animate-spin-slow' : ''} />
+        </button>
+      </div>
     </header>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] transition-colors ' +
+        (active ? 'bg-surface-hover text-ink' : 'text-ink-faint hover:text-ink')
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
+function Count({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded bg-[rgba(255,255,255,0.08)] px-1 text-[10.5px] text-ink-faint">
+      {children}
+    </span>
   )
 }
 

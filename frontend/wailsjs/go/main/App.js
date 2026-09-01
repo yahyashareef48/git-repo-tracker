@@ -10,6 +10,10 @@ export function AddRepos(arg1) {
   return window['go']['main']['App']['AddRepos'](arg1);
 }
 
+export function AddWorktree(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['AddWorktree'](arg1, arg2, arg3, arg4);
+}
+
 export function CheckGitHub() {
   return window['go']['main']['App']['CheckGitHub']();
 }
@@ -26,8 +30,20 @@ export function CopyToClipboard(arg1) {
   return window['go']['main']['App']['CopyToClipboard'](arg1);
 }
 
+export function CreateBranch(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateBranch'](arg1, arg2, arg3);
+}
+
+export function DeleteBranch(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DeleteBranch'](arg1, arg2, arg3);
+}
+
 export function DiscardFiles(arg1, arg2, arg3) {
   return window['go']['main']['App']['DiscardFiles'](arg1, arg2, arg3);
+}
+
+export function GetCommitDiff(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetCommitDiff'](arg1, arg2, arg3);
 }
 
 export function GetDetail(arg1) {
@@ -42,6 +58,10 @@ export function GetEnv() {
   return window['go']['main']['App']['GetEnv']();
 }
 
+export function GetLog(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetLog'](arg1, arg2, arg3);
+}
+
 export function GetRepo(arg1) {
   return window['go']['main']['App']['GetRepo'](arg1);
 }
@@ -50,12 +70,20 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function ListBranches(arg1) {
+  return window['go']['main']['App']['ListBranches'](arg1);
+}
+
 export function ListGroups() {
   return window['go']['main']['App']['ListGroups']();
 }
 
 export function ListRepos() {
   return window['go']['main']['App']['ListRepos']();
+}
+
+export function ListWorktrees(arg1) {
+  return window['go']['main']['App']['ListWorktrees'](arg1);
 }
 
 export function OpenIn(arg1, arg2) {
@@ -68,6 +96,10 @@ export function OpenURL(arg1) {
 
 export function RemoveRepo(arg1) {
   return window['go']['main']['App']['RemoveRepo'](arg1);
+}
+
+export function RemoveWorktree(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoveWorktree'](arg1, arg2, arg3);
 }
 
 export function Reorder(arg1) {
@@ -94,6 +126,10 @@ export function SetPinned(arg1, arg2) {
   return window['go']['main']['App']['SetPinned'](arg1, arg2);
 }
 
+export function ShowCommit(arg1, arg2) {
+  return window['go']['main']['App']['ShowCommit'](arg1, arg2);
+}
+
 export function StageFiles(arg1, arg2) {
   return window['go']['main']['App']['StageFiles'](arg1, arg2);
 }
@@ -104,6 +140,10 @@ export function StashAction(arg1, arg2, arg3) {
 
 export function StashPush(arg1, arg2, arg3) {
   return window['go']['main']['App']['StashPush'](arg1, arg2, arg3);
+}
+
+export function SwitchBranch(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SwitchBranch'](arg1, arg2, arg3);
 }
 
 export function UndoLastCommit(arg1) {

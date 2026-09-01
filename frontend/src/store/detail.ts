@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import {
   CommitChanges,
+  GetCommitDiff,
+  GetLog,
+  ShowCommit,
   DiscardFiles,
   GetDetail,
   GetDiff,
@@ -18,6 +21,12 @@ export type Change = gitx.Change
 export type Diff = gitx.Diff
 
 export type FileRef = { path: string; staged: boolean; untracked: boolean }
+export type Commit = gitx.Commit
+export type CommitDetail = gitx.CommitDetail
+
+export type Tab = 'changes' | 'history'
+
+const PAGE = 50
 
 type State = {
   open: boolean
@@ -32,6 +41,21 @@ type State = {
 
   message: string
   amend: boolean
+
+  tab: Tab
+  commits: Commit[]
+  commitsLoading: boolean
+  commitsExhausted: boolean
+  sha: string
+  commitDetail: CommitDetail | null
+  commitFile: string
+  commitDiff: Diff | null
+  commitDiffLoading: boolean
+
+  setTab: (t: Tab) => Promise<void>
+  loadMoreCommits: () => Promise<void>
+  selectCommit: (sha: string) => Promise<void>
+  selectCommitFile: (file: string) => Promise<void>
 
   openDetail: (path: string) => Promise<void>
   close: () => void
@@ -68,6 +92,67 @@ export const useDetail = create<State>((set, get) => ({
   message: '',
   amend: false,
 
+  tab: 'changes',
+  commits: [],
+  commitsLoading: false,
+  commitsExhausted: false,
+  sha: '',
+  commitDetail: null,
+  commitFile: '',
+  commitDiff: null,
+  commitDiffLoading: false,
+
+  async setTab(t) {
+    set({ tab: t })
+    // History is loaded lazily: most visits to this panel are about staging.
+    if (t === 'history' && get().commits.length === 0) await get().loadMoreCommits()
+  },
+
+  async loadMoreCommits() {
+    const { repoPath, commits, commitsLoading, commitsExhausted } = get()
+    if (!repoPath || commitsLoading || commitsExhausted) return
+
+    set({ commitsLoading: true })
+    try {
+      const page = (await GetLog(repoPath, commits.length, PAGE)) ?? []
+      set((s) => ({
+        commits: [...s.commits, ...page],
+        commitsExhausted: page.length < PAGE,
+      }))
+      if (!get().sha && page.length > 0) await get().selectCommit(page[0].sha)
+    } catch (e) {
+      useRepos.getState().toast('error', String(e))
+    } finally {
+      set({ commitsLoading: false })
+    }
+  },
+
+  async selectCommit(sha) {
+    set({ sha, commitDetail: null, commitFile: '', commitDiff: null })
+    try {
+      const detail = await ShowCommit(get().repoPath, sha)
+      if (get().sha !== sha) return
+      set({ commitDetail: detail })
+      const first = detail.files?.[0]
+      if (first) await get().selectCommitFile(first.path)
+    } catch (e) {
+      useRepos.getState().toast('error', String(e))
+    }
+  },
+
+  async selectCommitFile(file) {
+    const sha = get().sha
+    set({ commitFile: file, commitDiffLoading: true })
+    try {
+      const diff = await GetCommitDiff(get().repoPath, sha, file)
+      if (get().sha === sha && get().commitFile === file) set({ commitDiff: diff })
+    } catch (e) {
+      useRepos.getState().toast('error', String(e))
+    } finally {
+      set({ commitDiffLoading: false })
+    }
+  },
+
   async openDetail(path) {
     set({
       open: true,
@@ -78,6 +163,13 @@ export const useDetail = create<State>((set, get) => ({
       message: '',
       amend: false,
       loading: true,
+      tab: 'changes',
+      commits: [],
+      commitsExhausted: false,
+      sha: '',
+      commitDetail: null,
+      commitFile: '',
+      commitDiff: null,
     })
     await get().reload()
 
@@ -95,7 +187,18 @@ export const useDetail = create<State>((set, get) => ({
   },
 
   close() {
-    set({ open: false, detail: null, file: null, diff: null, message: '', amend: false })
+    set({
+      open: false,
+      detail: null,
+      file: null,
+      diff: null,
+      message: '',
+      amend: false,
+      commits: [],
+      commitDetail: null,
+      commitDiff: null,
+      sha: '',
+    })
   },
 
   async reload() {

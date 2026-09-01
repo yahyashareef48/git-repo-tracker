@@ -259,8 +259,9 @@ func Discard(ctx context.Context, dir string, paths []string, untracked bool) Op
 	return newResult("discard", dir, res, err)
 }
 
-// Commit records the index. Nothing staged is an error git already words well.
-func Commit(ctx context.Context, dir, message string, amend bool) OpResult {
+// CreateCommit records the index. "Commit" itself names the log entry type.
+// Nothing staged is an error git already words well enough to pass through.
+func CreateCommit(ctx context.Context, dir, message string, amend bool) OpResult {
 	args := []string{"commit", "-m", message}
 	if amend {
 		args = []string{"commit", "--amend", "-m", message}

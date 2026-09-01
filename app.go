@@ -435,7 +435,7 @@ func (a *App) CommitChanges(path, message string, amend bool) gitx.OpResult {
 		return gitx.OpResult{Op: "commit", Repo: path, Kind: "nothing",
 			Error: "a commit needs a message"}
 	}
-	return gitx.Commit(a.context(), path, message, amend)
+	return gitx.CreateCommit(a.context(), path, message, amend)
 }
 
 // UndoLastCommit moves HEAD back one, keeping the work staged.
@@ -451,4 +451,63 @@ func (a *App) StashPush(path, message string, includeUntracked bool) gitx.OpResu
 // StashAction applies, pops or drops one stash entry.
 func (a *App) StashAction(path, action, ref string) gitx.OpResult {
 	return gitx.StashAction(a.context(), path, action, ref)
+}
+
+// ListBranches returns every local and remote-tracking branch.
+func (a *App) ListBranches(path string) []gitx.Branch {
+	return gitx.ListBranches(a.context(), path)
+}
+
+// SwitchBranch checks out an existing branch. A remote-tracking ref creates the
+// matching local branch, which is what picking it from the list means.
+func (a *App) SwitchBranch(path, name string, remote bool) gitx.OpResult {
+	if remote {
+		return gitx.CheckoutRemote(a.context(), path, name)
+	}
+	return gitx.Checkout(a.context(), path, name)
+}
+
+// CreateBranch makes a branch and switches to it.
+func (a *App) CreateBranch(path, name, start string) gitx.OpResult {
+	if strings.TrimSpace(name) == "" {
+		return gitx.OpResult{Op: "checkout-new", Repo: path, Kind: "generic",
+			Error: "a branch needs a name"}
+	}
+	return gitx.CheckoutNew(a.context(), path, strings.TrimSpace(name), start)
+}
+
+// DeleteBranch removes a local branch.
+func (a *App) DeleteBranch(path, name string, force bool) gitx.OpResult {
+	return gitx.DeleteBranch(a.context(), path, name, force)
+}
+
+// GetLog returns a page of commits from the current branch.
+func (a *App) GetLog(path string, skip, limit int) []gitx.Commit {
+	return gitx.Log(a.context(), path, skip, limit)
+}
+
+// ShowCommit returns one commit and the files it touched.
+func (a *App) ShowCommit(path, sha string) gitx.CommitDetail {
+	return gitx.ShowCommit(a.context(), path, sha)
+}
+
+// GetCommitDiff returns one file's diff within a commit.
+func (a *App) GetCommitDiff(path, sha, file string) gitx.Diff {
+	return gitx.CommitFileDiff(a.context(), path, sha, file)
+}
+
+// ListWorktrees returns the worktrees attached to a repo.
+func (a *App) ListWorktrees(path string) []gitx.Worktree {
+	return gitx.ListWorktrees(a.context(), path)
+}
+
+// AddWorktree creates a linked worktree, optionally on a new branch.
+func (a *App) AddWorktree(path, folder, branch string, createBranch bool) gitx.OpResult {
+	return gitx.AddWorktree(a.context(), path, folder, strings.TrimSpace(branch), createBranch)
+}
+
+// RemoveWorktree detaches a linked worktree. The folder is deleted by git, so
+// the UI confirms first and only forces when the user insists.
+func (a *App) RemoveWorktree(path, folder string, force bool) gitx.OpResult {
+	return gitx.RemoveWorktree(a.context(), path, folder, force)
 }

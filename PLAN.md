@@ -203,7 +203,7 @@ UI response:
 | **2** | ✅ Core ops: fetch, pull, push, sync, pull-from-main, with error surfacing |
 | **3** | ✅ GitHub connectivity probe, banner, disabled-state wiring |
 | **4** | ✅ Changes panel: stage / unstage / discard / commit / amend / stash, plus a built-in diff view |
-| **5** | Worktree tree, branch picker, history log |
+| **5** | ✅ Worktree tree with add/remove, branch picker, history log |
 | **6** | Tray, autostart, bulk multi-repo ops |
 | **7** | Polish: Mica, animations, empty states, settings screen |
 | **8** | `wails build -nsis` → installer + portable build; GitHub-releases update check |

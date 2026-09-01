@@ -39,6 +39,36 @@ export namespace github {
 
 export namespace gitx {
 	
+	export class Branch {
+	    name: string;
+	    upstream: string;
+	    ahead: number;
+	    behind: number;
+	    current: boolean;
+	    remote: boolean;
+	    subject: string;
+	    age: string;
+	    sha: string;
+	    checkedOut: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Branch(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.upstream = source["upstream"];
+	        this.ahead = source["ahead"];
+	        this.behind = source["behind"];
+	        this.current = source["current"];
+	        this.remote = source["remote"];
+	        this.subject = source["subject"];
+	        this.age = source["age"];
+	        this.sha = source["sha"];
+	        this.checkedOut = source["checkedOut"];
+	    }
+	}
 	export class Change {
 	    path: string;
 	    orig: string;
@@ -76,6 +106,70 @@ export namespace gitx {
 	        this.unstaged = this.convertValues(source["unstaged"], Change);
 	        this.untracked = this.convertValues(source["untracked"], Change);
 	        this.conflicted = this.convertValues(source["conflicted"], Change);
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Commit {
+	    sha: string;
+	    short: string;
+	    subject: string;
+	    body: string;
+	    author: string;
+	    email: string;
+	    age: string;
+	    date: string;
+	    refs: string;
+	    parents: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Commit(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sha = source["sha"];
+	        this.short = source["short"];
+	        this.subject = source["subject"];
+	        this.body = source["body"];
+	        this.author = source["author"];
+	        this.email = source["email"];
+	        this.age = source["age"];
+	        this.date = source["date"];
+	        this.refs = source["refs"];
+	        this.parents = source["parents"];
+	    }
+	}
+	export class CommitDetail {
+	    commit: Commit;
+	    files: Change[];
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CommitDetail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.commit = this.convertValues(source["commit"], Commit);
+	        this.files = this.convertValues(source["files"], Change);
 	        this.error = source["error"];
 	    }
 	
@@ -213,6 +307,32 @@ export namespace gitx {
 	        this.lastCommit = source["lastCommit"];
 	        this.lastCommitAgo = source["lastCommitAgo"];
 	        this.error = source["error"];
+	    }
+	}
+	export class Worktree {
+	    path: string;
+	    name: string;
+	    head: string;
+	    branch: string;
+	    detached: boolean;
+	    bare: boolean;
+	    locked: boolean;
+	    isMain: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Worktree(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.head = source["head"];
+	        this.branch = source["branch"];
+	        this.detached = source["detached"];
+	        this.bare = source["bare"];
+	        this.locked = source["locked"];
+	        this.isMain = source["isMain"];
 	    }
 	}
 

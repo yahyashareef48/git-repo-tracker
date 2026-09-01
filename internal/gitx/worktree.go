@@ -60,3 +60,43 @@ func ListWorktrees(ctx context.Context, dir string) []Worktree {
 	flush()
 	return out
 }
+
+// AddWorktree creates a linked worktree at path. When branch is empty the new
+// worktree checks out a detached HEAD; when createBranch is set the branch is
+// created rather than required to exist.
+func AddWorktree(ctx context.Context, dir, path, branch string, createBranch bool) OpResult {
+	if path == "" {
+		return OpResult{Op: "worktree-add", Repo: dir, Kind: "generic",
+			Error: "a worktree needs a folder"}
+	}
+	args := []string{"worktree", "add"}
+	if branch != "" {
+		if createBranch {
+			args = append(args, "-b", branch)
+		}
+	}
+	args = append(args, path)
+	if branch != "" && !createBranch {
+		args = append(args, branch)
+	}
+
+	res, err := Git(ctx, dir, args...)
+	return newResult("worktree-add", dir, res, err)
+}
+
+// RemoveWorktree detaches a linked worktree. Without force git refuses while
+// the worktree has uncommitted changes, which is the check we want by default.
+func RemoveWorktree(ctx context.Context, dir, path string, force bool) OpResult {
+	if path == "" {
+		return OpResult{Op: "worktree-remove", Repo: dir, Kind: "generic",
+			Error: "no worktree given"}
+	}
+	args := []string{"worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, path)
+
+	res, err := Git(ctx, dir, args...)
+	return newResult("worktree-remove", dir, res, err)
+}
