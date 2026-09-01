@@ -26,6 +26,10 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function ListGroups() {
+  return window['go']['main']['App']['ListGroups']();
+}
+
 export function ListRepos() {
   return window['go']['main']['App']['ListRepos']();
 }
@@ -56,6 +60,10 @@ export function SaveSettings(arg1) {
 
 export function ScanFolder(arg1, arg2) {
   return window['go']['main']['App']['ScanFolder'](arg1, arg2);
+}
+
+export function SetGroup(arg1, arg2) {
+  return window['go']['main']['App']['SetGroup'](arg1, arg2);
 }
 
 export function SetPinned(arg1, arg2) {

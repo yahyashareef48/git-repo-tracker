@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,8 @@ type Entry struct {
 	Name    string `json:"name"`
 	Pinned  bool   `json:"pinned"`
 	AddedAt string `json:"addedAt"`
+	// Group is a free-text label the user assigns. Empty means ungrouped.
+	Group string `json:"group"`
 }
 
 // Settings holds user preferences that outlive a session.
@@ -160,6 +163,38 @@ func (s *Store) SetPinned(path string, pinned bool) error {
 	}
 	s.d.Repos[i].Pinned = pinned
 	return s.save()
+}
+
+// SetGroup moves a repo into a group. An empty name ungroups it.
+func (s *Store) SetGroup(path, group string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	i := s.indexOf(path)
+	if i < 0 {
+		return nil
+	}
+	s.d.Repos[i].Group = strings.TrimSpace(group)
+	return s.save()
+}
+
+// Groups returns every group name in use, sorted, without duplicates.
+func (s *Store) Groups() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range s.d.Repos {
+		if e.Group != "" && !seen[e.Group] {
+			seen[e.Group] = true
+			out = append(out, e.Group)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+	})
+	return out
 }
 
 // Reorder rewrites the repo order to match paths. Any tracked repo missing

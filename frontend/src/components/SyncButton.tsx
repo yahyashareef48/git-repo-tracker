@@ -32,7 +32,13 @@ export function primaryOp(status: Status): { op: Op; label: string; hint: string
   if (status.ahead > 0) {
     return { op: 'push', label: 'Push', hint: `Push ${status.ahead} commit(s)` }
   }
-  return { op: 'fetch', label: 'Fetch', hint: 'Check the remote for new commits' }
+  // Up to date as far as we know — but "as far as we know" is only as fresh as
+  // the last fetch, so offer the full sync rather than a bare fetch.
+  return {
+    op: 'sync',
+    label: 'Sync',
+    hint: 'Fetch, then pull and push anything that turns up',
+  }
 }
 
 const icons: Record<string, typeof RefreshCw> = {
@@ -62,8 +68,8 @@ export function SyncButton({ status, path }: { status: Status; path: string }) {
   }
 
   const Icon = icons[primary.op] ?? RefreshCw
-  // Anything that moves commits is worth emphasising; a plain fetch is not.
-  const emphasised = primary.op !== 'fetch'
+  // Emphasise only when there is real work to do; an idle sync is not news.
+  const emphasised = status.ahead > 0 || status.behind > 0 || !status.upstream
 
   return (
     <button

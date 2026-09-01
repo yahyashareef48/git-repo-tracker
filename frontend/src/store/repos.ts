@@ -6,9 +6,11 @@ import {
   GetEnv,
   GetRepo,
   ListRepos,
+  ListGroups,
   RemoveRepo,
   RunOp,
   ScanFolder,
+  SetGroup,
   SetPinned,
 } from '../../wailsjs/go/main/App'
 import type { gitx, main } from '../../wailsjs/go/models'
@@ -55,6 +57,24 @@ const opLabels: Record<Op, string> = {
 
 export const opLabel = (op: Op) => opLabels[op] ?? op
 
+/** Sentinel group filter meaning "only repos that have no group". */
+export const UNGROUPED = '__ungrouped__'
+
+/** The repos currently on screen, after the group filter and search box. */
+export function filterRepos(repos: RepoView[], groupFilter: string, query: string) {
+  const q = query.trim().toLowerCase()
+  return repos.filter((r) => {
+    if (groupFilter === UNGROUPED && r.group) return false
+    if (groupFilter && groupFilter !== UNGROUPED && r.group !== groupFilter) return false
+    if (!q) return true
+    return (
+      r.name.toLowerCase().includes(q) ||
+      r.path.toLowerCase().includes(q) ||
+      (r.status.branch ?? '').toLowerCase().includes(q)
+    )
+  })
+}
+
 type ScanState = {
   root: string
   results: ScanResult[]
@@ -73,6 +93,11 @@ type State = {
   scan: ScanState
   log: LogEntry[]
   logOpen: boolean
+  groups: string[]
+  /** '' = every repo, UNGROUPED = only repos with no group, else that group. */
+  groupFilter: string
+  /** Path of the repo whose "move to group" dialog is open. */
+  groupTarget: string | null
 
   init: () => Promise<void>
   refresh: () => Promise<void>
@@ -82,6 +107,11 @@ type State = {
   addRepo: () => Promise<void>
   removeRepo: (path: string) => Promise<void>
   togglePin: (path: string, pinned: boolean) => Promise<void>
+
+  setGroupFilter: (g: string) => void
+  openGroupDialog: (path: string) => void
+  closeGroupDialog: () => void
+  setGroup: (path: string, group: string) => Promise<void>
 
   runOp: (path: string, op: Op) => Promise<void>
   runOpAll: (op: Op) => Promise<void>
@@ -122,6 +152,9 @@ export const useRepos = create<State>((set, get) => ({
   scan: null,
   log: [],
   logOpen: false,
+  groups: [],
+  groupFilter: '',
+  groupTarget: null,
 
   async init() {
     try {
@@ -135,7 +168,8 @@ export const useRepos = create<State>((set, get) => ({
   async refresh() {
     set({ loading: true })
     try {
-      set({ repos: await ListRepos() })
+      const [repos, groups] = await Promise.all([ListRepos(), ListGroups()])
+      set({ repos, groups: groups ?? [] })
     } catch (e) {
       get().toast('error', message(e))
     } finally {
@@ -204,6 +238,29 @@ export const useRepos = create<State>((set, get) => ({
     }
   },
 
+  setGroupFilter(g) {
+    set({ groupFilter: g })
+  },
+
+  openGroupDialog(path) {
+    set({ groupTarget: path })
+  },
+
+  closeGroupDialog() {
+    set({ groupTarget: null })
+  },
+
+  async setGroup(path, group) {
+    set({ groupTarget: null })
+    try {
+      await SetGroup(path, group)
+      await get().refresh()
+      get().toast('success', group ? `Moved to “${group}”` : 'Removed from its group')
+    } catch (e) {
+      get().toast('error', message(e))
+    }
+  },
+
   async runOp(path, op) {
     const repo = get().repos.find((r) => r.path === path)
     const repoName = repo?.name ?? path.split(/[\\/]/).pop() ?? path
@@ -251,7 +308,10 @@ export const useRepos = create<State>((set, get) => ({
   },
 
   async runOpAll(op) {
-    const paths = get().repos.map((r) => r.path)
+    // "all" means what the user can currently see: filtering to a group and
+    // hitting Fetch all should not quietly fetch every other repo too.
+    const { repos, groupFilter, query } = get()
+    const paths = filterRepos(repos, groupFilter, query).map((r) => r.path)
     // Sequential on purpose: parallel network git across every repo is a good
     // way to trip rate limits and produce an unreadable log.
     for (const p of paths) {

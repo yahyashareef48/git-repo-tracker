@@ -9,12 +9,13 @@ import {
   Terminal,
   TriangleAlert,
 } from 'lucide-react'
+import { GroupDialog } from './components/GroupDialog'
 import { LogDrawer } from './components/LogDrawer'
 import { RepoRow } from './components/RepoRow'
 import { ScanDialog } from './components/ScanDialog'
 import { TitleBar } from './components/TitleBar'
 import { Toasts } from './components/Toasts'
-import { useRepos } from './store/repos'
+import { filterRepos, UNGROUPED, useRepos, type RepoView } from './store/repos'
 
 export default function App() {
   const init = useRepos((s) => s.init)
@@ -31,6 +32,9 @@ export default function App() {
   const logCount = useRepos((s) => s.log.length)
   const logFailures = useRepos((s) => s.log.filter((e) => !e.ok).length)
   const busyCount = useRepos((s) => s.busy.size)
+  const groups = useRepos((s) => s.groups)
+  const groupFilter = useRepos((s) => s.groupFilter)
+  const setGroupFilter = useRepos((s) => s.setGroupFilter)
 
   useEffect(() => {
     init()
@@ -44,16 +48,31 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus)
   }, [refresh])
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return repos
-    return repos.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.path.toLowerCase().includes(q) ||
-        r.status.branch?.toLowerCase().includes(q),
-    )
-  }, [repos, query])
+  const filtered = useMemo(
+    () => filterRepos(repos, groupFilter, query),
+    [repos, groupFilter, query],
+  )
+
+  // With no group filter chosen, repos are shown under their group headings so
+  // the grouping is visible without having to filter to see it.
+  const sections = useMemo(() => {
+    if (groupFilter) return [{ name: '', repos: filtered }]
+
+    const byGroup = new Map<string, RepoView[]>()
+    for (const r of filtered) {
+      const key = r.group || ''
+      const list = byGroup.get(key)
+      list ? list.push(r) : byGroup.set(key, [r])
+    }
+    const named = [...byGroup.entries()]
+      .filter(([name]) => name !== '')
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, list]) => ({ name, repos: list }))
+    const rest = byGroup.get('') ?? []
+
+    if (named.length === 0) return [{ name: '', repos: filtered }]
+    return [...named, ...(rest.length ? [{ name: 'Ungrouped', repos: rest }] : [])]
+  }, [filtered, groupFilter])
 
   const totals = useMemo(() => {
     let ahead = 0
@@ -64,6 +83,8 @@ export default function App() {
     }
     return { ahead, dirty }
   }, [repos])
+
+  const ungroupedCount = repos.filter((r) => !r.group).length
 
   return (
     <div className="flex h-full flex-col bg-surface text-ink">
@@ -114,7 +135,7 @@ export default function App() {
         <ToolbarButton
           onClick={() => runOpAll('fetch')}
           icon={<DownloadCloud size={13} className={busyCount > 0 ? 'animate-spin-slow' : ''} />}
-          label="Fetch all"
+          label={groupFilter ? 'Fetch group' : 'Fetch all'}
         />
         <ToolbarButton
           onClick={refresh}
@@ -123,6 +144,34 @@ export default function App() {
         />
       </div>
 
+      {groups.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-3 py-1.5">
+          <GroupChip
+            label="All"
+            count={repos.length}
+            active={groupFilter === ''}
+            onClick={() => setGroupFilter('')}
+          />
+          {groups.map((g) => (
+            <GroupChip
+              key={g}
+              label={g}
+              count={repos.filter((r) => r.group === g).length}
+              active={groupFilter === g}
+              onClick={() => setGroupFilter(g)}
+            />
+          ))}
+          {ungroupedCount > 0 && (
+            <GroupChip
+              label="Ungrouped"
+              count={ungroupedCount}
+              active={groupFilter === UNGROUPED}
+              onClick={() => setGroupFilter(UNGROUPED)}
+            />
+          )}
+        </div>
+      )}
+
       <main className="min-h-0 flex-1 overflow-y-auto">
         {loading && repos.length === 0 ? (
           <LoadingState />
@@ -130,10 +179,22 @@ export default function App() {
           <EmptyState onAdd={addRepo} onScan={startScan} />
         ) : filtered.length === 0 ? (
           <div className="px-4 py-16 text-center text-[12.5px] text-ink-faint">
-            No repository matches “{query}”.
+            No repository matches this filter.
           </div>
         ) : (
-          filtered.map((r) => <RepoRow key={r.path} repo={r} />)
+          sections.map((section) => (
+            <section key={section.name || '__all__'}>
+              {section.name && (
+                <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-surface-raised/90 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint backdrop-blur">
+                  {section.name}
+                  <span className="text-ink-faint/70">{section.repos.length}</span>
+                </div>
+              )}
+              {section.repos.map((r) => (
+                <RepoRow key={r.path} repo={r} />
+              ))}
+            </section>
+          ))
         )}
       </main>
 
@@ -160,8 +221,36 @@ export default function App() {
       </footer>
 
       <ScanDialog />
+      <GroupDialog />
       <Toasts />
     </div>
+  )
+}
+
+function GroupChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors ' +
+        (active
+          ? 'border-accent/50 bg-accent-dim text-accent'
+          : 'border-line text-ink-soft hover:border-line-strong hover:text-ink')
+      }
+    >
+      {label}
+      <span className={active ? 'text-accent/70' : 'text-ink-faint'}>{count}</span>
+    </button>
   )
 }
 

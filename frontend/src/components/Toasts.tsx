@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, Info, X } from 'lucide-react'
+import { CircleCheck, CircleX, Info, Terminal, X } from 'lucide-react'
 import { useRepos } from '../store/repos'
 
 const styles = {
@@ -7,52 +7,91 @@ const styles = {
   info: { icon: Info, cls: 'text-accent' },
 } as const
 
+/** Only the newest few are shown; a bulk operation must not wallpaper the app. */
+const MAX_VISIBLE = 3
+
 export function Toasts() {
   const toasts = useRepos((s) => s.toasts)
   const dismiss = useRepos((s) => s.dismissToast)
+  const toggleLog = useRepos((s) => s.toggleLog)
+  const logOpen = useRepos((s) => s.logOpen)
 
   if (toasts.length === 0) return null
 
+  const hidden = Math.max(0, toasts.length - MAX_VISIBLE)
+  const visible = toasts.slice(-MAX_VISIBLE)
+
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-      {toasts.map((t) => {
+    <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-[320px] flex-col items-end gap-1.5">
+      {hidden > 0 && (
+        <div className="pointer-events-auto rounded bg-surface-raised px-2 py-0.5 text-[11px] text-ink-faint">
+          +{hidden} more
+        </div>
+      )}
+
+      {visible.map((t) => {
         const { icon: Icon, cls } = styles[t.kind]
         return (
           <div
             key={t.id}
-            className="animate-fade-in pointer-events-auto flex max-w-[380px] items-start gap-2.5 rounded-lg border border-line-strong bg-surface-raised px-3 py-2.5 shadow-xl backdrop-blur-xl"
+            className="animate-fade-in pointer-events-auto flex w-full items-start gap-2 rounded-lg border border-line-strong bg-surface-raised px-2.5 py-2 shadow-xl backdrop-blur-xl"
           >
-            <Icon size={14} className={'mt-[1px] shrink-0 ' + cls} />
+            <Icon size={13} className={'mt-[2px] shrink-0 ' + cls} />
+
             <div className="min-w-0 flex-1">
-              <div className="selectable text-[12.5px] leading-snug text-ink-soft">{t.text}</div>
+              {/* Git errors can be paragraphs. Two lines here, the whole thing
+                  in the log drawer. */}
+              <div
+                title={t.text}
+                className="selectable line-clamp-2 text-[12px] leading-snug text-ink-soft"
+              >
+                {t.text}
+              </div>
               {t.detail && (
-                <div className="selectable mt-1 font-mono text-[11px] leading-snug text-ink-faint">
+                <div
+                  title={t.detail}
+                  className="selectable mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-faint"
+                >
                   {t.detail}
                 </div>
               )}
-              {t.actions && t.actions.length > 0 && (
-                <div className="mt-2 flex gap-1.5">
-                  {t.actions.map((a) => (
+
+              {(t.actions?.length || t.kind === 'error') && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {t.actions?.map((a) => (
                     <button
                       key={a.label}
                       onClick={() => {
                         dismiss(t.id)
                         a.run()
                       }}
-                      className="rounded border border-line-strong px-2 py-1 text-[11.5px] text-ink-soft transition-colors hover:bg-surface-hover hover:text-ink"
+                      className="rounded border border-line-strong px-1.5 py-0.5 text-[11px] text-ink-soft transition-colors hover:bg-surface-hover hover:text-ink"
                     >
                       {a.label}
                     </button>
                   ))}
+                  {t.kind === 'error' && !logOpen && (
+                    <button
+                      onClick={() => {
+                        dismiss(t.id)
+                        toggleLog()
+                      }}
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-faint hover:text-ink"
+                    >
+                      <Terminal size={10} />
+                      Details
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+
             <button
               onClick={() => dismiss(t.id)}
               aria-label="Dismiss"
-              className="mt-[1px] shrink-0 text-ink-faint hover:text-ink"
+              className="mt-[2px] shrink-0 text-ink-faint hover:text-ink"
             >
-              <X size={12} />
+              <X size={11} />
             </button>
           </div>
         )

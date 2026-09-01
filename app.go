@@ -31,6 +31,7 @@ type RepoView struct {
 	Path      string        `json:"path"`
 	Name      string        `json:"name"`
 	Pinned    bool          `json:"pinned"`
+	Group     string        `json:"group"`
 	Status    gitx.Status   `json:"status"`
 	Worktrees []gitx.Status `json:"worktrees"`
 }
@@ -116,7 +117,7 @@ func (a *App) ListRepos() []RepoView {
 
 func (a *App) buildView(e store.Entry) RepoView {
 	ctx := a.context()
-	v := RepoView{Path: e.Path, Name: e.Name, Pinned: e.Pinned}
+	v := RepoView{Path: e.Path, Name: e.Name, Pinned: e.Pinned, Group: e.Group}
 
 	if _, err := os.Stat(e.Path); err != nil {
 		v.Status = gitx.Status{Path: e.Path, Name: e.Name, Error: "folder is missing"}
@@ -201,6 +202,22 @@ func (a *App) SetPinned(path string, pinned bool) error {
 		return errNoStore
 	}
 	return a.store.SetPinned(path, pinned)
+}
+
+// SetGroup moves a repo into a named group. An empty name ungroups it.
+func (a *App) SetGroup(path, group string) error {
+	if a.store == nil {
+		return errNoStore
+	}
+	return a.store.SetGroup(path, group)
+}
+
+// ListGroups returns every group name currently in use.
+func (a *App) ListGroups() []string {
+	if a.store == nil {
+		return nil
+	}
+	return a.store.Groups()
 }
 
 // Reorder persists a new repo ordering.

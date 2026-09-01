@@ -6,6 +6,7 @@ import {
   Code2,
   DownloadCloud,
   FolderOpen,
+  FolderTree,
   GitMerge,
   MoreHorizontal,
   Pin,
@@ -19,7 +20,7 @@ import { OpenIn } from '../../wailsjs/go/main/App'
 import type { gitx } from '../../wailsjs/go/models'
 import { useRepos, type RepoView } from '../store/repos'
 import { BranchPill, Counters, StatusDot } from './Badges'
-import { Menu } from './Menu'
+import { Menu, type MenuItem } from './Menu'
 import { SyncButton } from './SyncButton'
 
 export function RepoRow({ repo }: { repo: RepoView }) {
@@ -30,6 +31,7 @@ export function RepoRow({ repo }: { repo: RepoView }) {
   const removeRepo = useRepos((s) => s.removeRepo)
   const togglePin = useRepos((s) => s.togglePin)
   const runOp = useRepos((s) => s.runOp)
+  const openGroupDialog = useRepos((s) => s.openGroupDialog)
   const toast = useRepos((s) => s.toast)
 
   const worktrees = repo.worktrees ?? []
@@ -42,6 +44,80 @@ export function RepoRow({ repo }: { repo: RepoView }) {
       toast('error', String(e))
     }
   }
+
+  // Only offer what this repo can actually do: an already-published branch has
+  // nothing to publish, and a repo with no remote has nothing to fetch from.
+  const remote = repo.status.hasRemote && !repo.status.error
+  const published = !!repo.status.upstream
+
+  const menuItems: MenuItem[] = []
+  if (remote) {
+    menuItems.push(
+      {
+        label: 'Fetch',
+        icon: <DownloadCloud size={13} />,
+        onSelect: () => runOp(repo.path, 'fetch'),
+      },
+      { label: 'Pull', icon: <ArrowDown size={13} />, onSelect: () => runOp(repo.path, 'pull') },
+      { label: 'Push', icon: <ArrowUp size={13} />, onSelect: () => runOp(repo.path, 'push') },
+      { label: 'Sync', icon: <RefreshCw size={13} />, onSelect: () => runOp(repo.path, 'sync') },
+      {
+        label: `Pull from ${repo.status.defaultBranch || 'main'}`,
+        icon: <GitMerge size={13} />,
+        onSelect: () => runOp(repo.path, 'pull-from-main'),
+      },
+    )
+    if (!published) {
+      menuItems.push({
+        label: 'Publish branch',
+        icon: <CloudUpload size={13} />,
+        onSelect: () => runOp(repo.path, 'publish'),
+      })
+    }
+    menuItems.push({ kind: 'separator' })
+  }
+
+  menuItems.push(
+    {
+      label: 'Open in VS Code',
+      icon: <Code2 size={13} />,
+      onSelect: () => open('vscode', repo.path),
+    },
+    {
+      label: 'Reveal in Explorer',
+      icon: <FolderOpen size={13} />,
+      onSelect: () => open('explorer', repo.path),
+    },
+    {
+      label: 'Open terminal',
+      icon: <Terminal size={13} />,
+      onSelect: () => open('terminal', repo.path),
+    },
+    { kind: 'separator' },
+    {
+      label: repo.group ? `Group: ${repo.group}` : 'Move to group…',
+      icon: <FolderTree size={13} />,
+      onSelect: () => openGroupDialog(repo.path),
+    },
+    {
+      label: repo.pinned ? 'Unpin' : 'Pin to top',
+      icon: repo.pinned ? <PinOff size={13} /> : <Pin size={13} />,
+      onSelect: () => togglePin(repo.path, !repo.pinned),
+    },
+    {
+      label: 'Stop tracking',
+      icon: <Trash2 size={13} />,
+      danger: true,
+      onSelect: () => {
+        // Untracking only edits GitDeck's own list; the folder and its history
+        // are never touched.
+        const msg =
+          `Stop tracking "${repo.name}"?\n\n` +
+          'This only removes it from GitDeck. Nothing is deleted from disk.'
+        if (window.confirm(msg)) removeRepo(repo.path)
+      },
+    },
+  )
 
   return (
     <div className="border-b border-line last:border-b-0">
@@ -70,6 +146,11 @@ export function RepoRow({ repo }: { repo: RepoView }) {
           <div className="flex items-baseline gap-2">
             <span className="truncate text-[13px] font-medium">{repo.name}</span>
             {repo.pinned && <Pin size={10} className="shrink-0 text-accent" />}
+            {repo.group && (
+              <span className="shrink-0 rounded bg-accent-dim px-1.5 text-[10px] text-accent">
+                {repo.group}
+              </span>
+            )}
             {hasChildren && (
               <span className="shrink-0 rounded bg-[rgba(255,255,255,0.05)] px-1.5 text-[10px] text-ink-faint">
                 {worktrees.length} worktree{worktrees.length > 1 ? 's' : ''}
@@ -83,11 +164,11 @@ export function RepoRow({ repo }: { repo: RepoView }) {
 
         {repo.status.error ? (
           <span
-            className="flex items-center gap-1.5 rounded bg-[rgba(242,96,122,0.12)] px-2 py-1 text-[11.5px] text-conflict"
+            className="flex max-w-[240px] items-center gap-1.5 rounded bg-[rgba(242,96,122,0.12)] px-2 py-1 text-[11.5px] text-conflict"
             title={repo.status.error}
           >
-            <TriangleAlert size={12} />
-            {repo.status.error}
+            <TriangleAlert size={12} className="shrink-0" />
+            <span className="truncate">{repo.status.error}</span>
           </span>
         ) : (
           <>
@@ -124,78 +205,7 @@ export function RepoRow({ repo }: { repo: RepoView }) {
                 <MoreHorizontal size={14} />
               </button>
             )}
-            items={[
-              {
-                label: 'Fetch',
-                icon: <DownloadCloud size={13} />,
-                onSelect: () => runOp(repo.path, 'fetch'),
-              },
-              {
-                label: 'Pull',
-                icon: <ArrowDown size={13} />,
-                onSelect: () => runOp(repo.path, 'pull'),
-              },
-              {
-                label: 'Push',
-                icon: <ArrowUp size={13} />,
-                onSelect: () => runOp(repo.path, 'push'),
-              },
-              {
-                label: 'Sync (fetch, pull, push)',
-                icon: <RefreshCw size={13} />,
-                onSelect: () => runOp(repo.path, 'sync'),
-              },
-              { kind: 'separator' },
-              {
-                label: `Pull from ${repo.status.defaultBranch || 'main'}`,
-                icon: <GitMerge size={13} />,
-                onSelect: () => runOp(repo.path, 'pull-from-main'),
-              },
-              {
-                label: 'Publish branch',
-                icon: <CloudUpload size={13} />,
-                onSelect: () => runOp(repo.path, 'publish'),
-              },
-              { kind: 'separator' },
-              {
-                label: 'Open in VS Code',
-                icon: <Code2 size={13} />,
-                onSelect: () => open('vscode', repo.path),
-              },
-              {
-                label: 'Reveal in Explorer',
-                icon: <FolderOpen size={13} />,
-                onSelect: () => open('explorer', repo.path),
-              },
-              {
-                label: 'Open terminal here',
-                icon: <Terminal size={13} />,
-                onSelect: () => open('terminal', repo.path),
-              },
-              { kind: 'separator' },
-              {
-                label: repo.pinned ? 'Unpin' : 'Pin to top',
-                icon: repo.pinned ? <PinOff size={13} /> : <Pin size={13} />,
-                onSelect: () => togglePin(repo.path, !repo.pinned),
-              },
-              { kind: 'separator' },
-              {
-                label: 'Stop tracking',
-                icon: <Trash2 size={13} />,
-                danger: true,
-                onSelect: () => {
-                  // Untracking only edits GitDeck's own list; the folder and
-                  // its history are never touched.
-                  if (
-                    window.confirm(
-                      `Stop tracking "${repo.name}"?\n\nThis only removes it from GitDeck. Nothing is deleted from disk.`,
-                    )
-                  ) {
-                    removeRepo(repo.path)
-                  }
-                },
-              },
-            ]}
+            items={menuItems}
           />
         </div>
       </div>

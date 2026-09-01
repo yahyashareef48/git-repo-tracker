@@ -107,6 +107,7 @@ export namespace main {
 	    path: string;
 	    name: string;
 	    pinned: boolean;
+	    group: string;
 	    status: gitx.Status;
 	    worktrees: gitx.Status[];
 	
@@ -119,6 +120,7 @@ export namespace main {
 	        this.path = source["path"];
 	        this.name = source["name"];
 	        this.pinned = source["pinned"];
+	        this.group = source["group"];
 	        this.status = this.convertValues(source["status"], gitx.Status);
 	        this.worktrees = this.convertValues(source["worktrees"], gitx.Status);
 	    }

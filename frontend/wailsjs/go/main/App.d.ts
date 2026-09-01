@@ -16,6 +16,8 @@ export function GetRepo(arg1:string):Promise<main.RepoView>;
 
 export function GetSettings():Promise<store.Settings>;
 
+export function ListGroups():Promise<Array<string>>;
+
 export function ListRepos():Promise<Array<main.RepoView>>;
 
 export function OpenIn(arg1:string,arg2:string):Promise<void>;
@@ -31,5 +33,7 @@ export function RunOp(arg1:string,arg2:string):Promise<Array<gitx.OpResult>>;
 export function SaveSettings(arg1:store.Settings):Promise<void>;
 
 export function ScanFolder(arg1:string,arg2:number):Promise<Array<main.ScanResult>>;
+
+export function SetGroup(arg1:string,arg2:string):Promise<void>;
 
 export function SetPinned(arg1:string,arg2:boolean):Promise<void>;
