@@ -1,0 +1,11 @@
+# The Wails CLI rewrites generated bindings and the NSIS templates on every
+# build using LF, while core.autocrlf wants CRLF in the working tree. Without
+# this, those files show as modified after every build even though not one
+# character of content changed.
+* text=auto eol=lf
+
+*.png  binary
+*.ico  binary
+*.exe  binary
+*.syso binary
+*.woff2 binary
