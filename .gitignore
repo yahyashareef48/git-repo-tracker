@@ -4,3 +4,7 @@ frontend/dist
 
 # Wails build artefacts
 frontend/package.json.md5
+
+# A stray build of the tray landed here once; never again.
+/traydeck.exe
+/gitdeck.exe

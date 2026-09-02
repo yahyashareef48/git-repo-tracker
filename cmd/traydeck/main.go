@@ -60,9 +60,11 @@ func main() {
 	go s.run(ctx)
 	startTray(s)
 
-	// --panel opens the panel straight away. Without it the only way in is a
-	// tray click, which makes the panel awkward to work on.
-	if slices.Contains(os.Args[1:], "--panel") {
+	// --panel opens the panel straight away, and --scope opens it with the
+	// watch picker showing. Without these the only way in is a tray click,
+	// which makes the panel awkward to work on and impossible to capture.
+	if slices.Contains(os.Args[1:], "--panel") || slices.Contains(os.Args[1:], "--scope") {
+		s.startScopeOpen = slices.Contains(os.Args[1:], "--scope")
 		s.askPanel()
 	}
 
