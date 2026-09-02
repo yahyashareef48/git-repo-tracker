@@ -31,16 +31,6 @@ export type Health = github.Health
 export type Settings = store.Settings
 export type UpdateInfo = update.Info
 
-/** Which repos the compact tray panel shows. */
-export function watchedRepos(repos: RepoView[], settings: Settings | null) {
-  if (!settings || settings.watchMode === 'all') return repos
-  if (settings.watchMode === 'group') {
-    return repos.filter((r) => r.group === settings.watchGroup)
-  }
-  const picked = new Set(settings.watchPaths ?? [])
-  return repos.filter((r) => picked.has(r.path))
-}
-
 /** One repo's outcome inside a bulk run, for the progress strip. */
 export type BulkResult = { path: string; name: string; ok: boolean; error: string }
 export type Bulk = { op: Op; total: number; done: number; results: BulkResult[] } | null
