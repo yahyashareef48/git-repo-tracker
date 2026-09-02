@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"gitdeck/internal/gitx"
 	"gitdeck/internal/repos"
 	"gitdeck/internal/store"
 )
@@ -140,5 +141,41 @@ func TestScopeEntriesPreserveOtherSettings(t *testing.T) {
 		if e.next.AutoFetchMinutes != 15 || !e.next.PullFromMainRebase || !e.next.CloseToTray {
 			t.Fatalf("entry %q dropped unrelated settings: %+v", e.key, e.next)
 		}
+	}
+}
+
+func TestWorktreeRowsDropTheRepositoryName(t *testing.T) {
+	views := []repos.View{{
+		Name:   "WebApp-API",
+		Path:   `C:\r\api`,
+		Status: gitx.Status{Branch: "main"},
+		Worktrees: []gitx.Status{
+			{Name: "WebApp-API", Path: `C:\r\api-wt`, Branch: "fix/ask-on-every-agent"},
+			{Name: "spike", Path: `C:\r\spike`, Branch: "spike/idea"},
+		},
+	}}
+	rows := flatten(views)
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	if got := rows[0].label(); got != "WebApp-API" {
+		t.Errorf("repository label = %q", got)
+	}
+	if got := rows[0].trailing(); got != "main" {
+		t.Errorf("repository trailing = %q, want its branch", got)
+	}
+	// The worktree named after its repository shows its branch instead.
+	if got := rows[1].label(); got != "fix/ask-on-every-agent" {
+		t.Errorf("worktree label = %q, want the branch", got)
+	}
+	if got := rows[1].trailing(); got != "" {
+		t.Errorf("worktree trailing = %q, want nothing repeated", got)
+	}
+	// A worktree with a name of its own keeps it.
+	if got := rows[2].label(); got != "spike" {
+		t.Errorf("named worktree label = %q", got)
+	}
+	if got := rows[2].trailing(); got != "spike/idea" {
+		t.Errorf("named worktree trailing = %q", got)
 	}
 }

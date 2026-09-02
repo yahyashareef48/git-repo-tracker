@@ -91,6 +91,11 @@ func runPanel(ctx context.Context, s *state) {
 		switch e := w.Event().(type) {
 		case app.DestroyEvent:
 			return
+		case app.Win32ViewEvent:
+			// Gio hands over the HWND once the window exists, which is the
+			// only way to reach the Windows calls it does not wrap.
+			ui.hwnd = e.HWND
+			pinOnTop(ui.hwnd)
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
 			ui.layout(ctx, gtx)
@@ -134,6 +139,9 @@ type panelUI struct {
 	// sized guards the one resize to the real scale, so the window is not
 	// asked to resize on every frame.
 	sized bool
+
+	// hwnd is the window handle, once Windows has made one.
+	hwnd uintptr
 }
 
 func newPanelUI(s *state, w *app.Window) *panelUI {
@@ -175,6 +183,9 @@ func (p *panelUI) sizeOnce(gtx layout.Context) {
 	p.sized = true
 	side := squareDp(primaryWidthPx(), gtx.Metric.PxPerDp)
 	p.w.Option(app.Size(side, side), app.MinSize(side, side))
+
+	// Resizing can drop the window out of the topmost band, so say it again.
+	pinOnTop(p.hwnd)
 }
 
 func (p *panelUI) layout(ctx context.Context, gtx layout.Context) layout.Dimensions {
@@ -467,13 +478,38 @@ type flatRow struct {
 	last   bool
 }
 
+// label is what the row is called: a repository's name, or a worktree's
+// branch once the repeated repository name has been dropped.
+func (r flatRow) label() string {
+	if r.name == "" {
+		return r.status.Branch
+	}
+	return r.name
+}
+
+// trailing is the dimmer text after the name, and is empty when the branch
+// has already been promoted to the label.
+func (r flatRow) trailing() string {
+	if r.name == "" {
+		return ""
+	}
+	return r.status.Branch
+}
+
 func flatten(views []repos.View) []flatRow {
 	var out []flatRow
 	for _, v := range views {
 		out = append(out, flatRow{name: v.Name, path: v.Path, status: v.Status})
 		for i, wt := range v.Worktrees {
+			// A worktree already hangs under its repository, so repeating the
+			// repository's name on it says nothing. Its branch is the thing
+			// that tells one worktree from another, so that becomes its label.
+			name := wt.Name
+			if name == v.Name {
+				name = ""
+			}
 			out = append(out, flatRow{
-				name:   wt.Name,
+				name:   name,
 				path:   wt.Path,
 				status: wt,
 				nested: true,
@@ -551,7 +587,7 @@ func (p *panelUI) rowBody(gtx layout.Context, r flatRow, rw *rowWidgets, left un
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(p.th, unit.Sp(11.5), r.name)
+				l := material.Label(p.th, unit.Sp(11.5), r.label())
 				l.Color = colInk
 				if r.nested {
 					l.Color = colInkSoft
@@ -561,7 +597,7 @@ func (p *panelUI) rowBody(gtx layout.Context, r flatRow, rw *rowWidgets, left un
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(5)}.Layout),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(p.th, unit.Sp(10), r.status.Branch)
+				l := material.Label(p.th, unit.Sp(10), r.trailing())
 				l.Color = colInkFaint
 				l.MaxLines = 1
 				return l.Layout(gtx)
