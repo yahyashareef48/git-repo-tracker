@@ -86,6 +86,8 @@ export function SettingsDialog() {
             checked={settings?.pullFromMainRebase ?? false}
             onChange={(v) => save({ pullFromMainRebase: v })}
           />
+
+          <WatchScope />
         </div>
 
         <div className="flex items-center gap-3 border-t border-line px-4 py-2.5">
@@ -137,6 +139,104 @@ export function SettingsDialog() {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Chooses what the tray panel watches.
+ *
+ * This used to live in the panel itself. The panel is drawn by a separate
+ * process now and deliberately has no settings of its own, so the choice
+ * belongs here — which is where someone would look for it anyway.
+ */
+function WatchScope() {
+  const settings = useRepos((s) => s.settings)
+  const save = useRepos((s) => s.saveSettings)
+  const groups = useRepos((s) => s.groups)
+  const repos = useRepos((s) => s.repos)
+  const selected = useRepos((s) => s.selected)
+
+  const mode = settings?.watchMode ?? 'all'
+  const picked = settings?.watchPaths ?? []
+
+  return (
+    <div className="px-4 py-2.5">
+      <div className="text-[12.5px] text-ink-soft">Tray panel watches</div>
+      <div className="mb-2 text-[11px] leading-snug text-ink-faint">
+        The compact panel behind the tray icon shows only these.
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        <Chip active={mode === 'all'} onClick={() => save({ watchMode: 'all' })}>
+          All repositories
+        </Chip>
+
+        {groups.map((g) => (
+          <Chip
+            key={g}
+            active={mode === 'group' && settings?.watchGroup === g}
+            onClick={() => save({ watchMode: 'group', watchGroup: g })}
+          >
+            {g}
+          </Chip>
+        ))}
+
+        <Chip
+          active={mode === 'picked'}
+          onClick={() => {
+            // Ticked rows are the natural source for a hand-picked set; fall
+            // back to whatever was already picked so the choice is not lost.
+            const paths = selected.size > 0 ? [...selected] : picked
+            save({ watchMode: 'picked', watchPaths: paths })
+          }}
+        >
+          {selected.size > 0
+            ? `Selected (${selected.size})`
+            : `Picked (${picked.length})`}
+        </Chip>
+      </div>
+
+      {mode === 'picked' && picked.length === 0 && (
+        <div className="mt-1.5 text-[11px] text-behind">
+          Nothing picked yet — tick repositories in the list, then choose this again.
+        </div>
+      )}
+      {mode === 'picked' && picked.length > 0 && (
+        <div className="mt-1.5 truncate text-[11px] text-ink-faint">
+          {picked
+            .map((p) => p.split(/[\/]/).pop())
+            .filter(Boolean)
+            .join(', ')}
+        </div>
+      )}
+      {repos.length === 0 && (
+        <div className="mt-1.5 text-[11px] text-ink-faint">Add a repository first.</div>
+      )}
+    </div>
+  )
+}
+
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        'rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors ' +
+        (active
+          ? 'border-accent/50 bg-accent-dim text-accent'
+          : 'border-line text-ink-soft hover:border-line-strong hover:text-ink')
+      }
+    >
+      {children}
+    </button>
   )
 }
 

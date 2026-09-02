@@ -28,6 +28,9 @@ type Status struct {
 	Repos    int
 	Unpushed int
 	Dirty    int
+	// Version is shown in the tooltip so the running build is identifiable
+	// without opening anything.
+	Version string
 }
 
 var (
@@ -149,7 +152,11 @@ func SetStatus(s Status) {
 		return
 	}
 
-	tip := "GitDeck — " + strconv.Itoa(s.Repos) + " repositories"
+	tip := "GitDeck"
+	if s.Version != "" {
+		tip += " " + s.Version
+	}
+	tip += " — " + strconv.Itoa(s.Repos) + " repositories"
 	if s.Unpushed > 0 {
 		tip += ", " + strconv.Itoa(s.Unpushed) + " to push"
 	}

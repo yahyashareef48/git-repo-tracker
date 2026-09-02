@@ -4,6 +4,7 @@ import {gitx} from '../models';
 import {github} from '../models';
 import {update} from '../models';
 import {main} from '../models';
+import {repos} from '../models';
 import {store} from '../models';
 
 export function AddRepo(arg1:string):Promise<void>;
@@ -28,9 +29,7 @@ export function DeleteBranch(arg1:string,arg2:string,arg3:boolean):Promise<gitx.
 
 export function DiscardFiles(arg1:string,arg2:Array<string>,arg3:boolean):Promise<gitx.OpResult>;
 
-export function EnterMini():Promise<void>;
-
-export function ExitMini():Promise<void>;
+export function EnsureTray():Promise<void>;
 
 export function GetAutostart():Promise<boolean>;
 
@@ -44,19 +43,15 @@ export function GetEnv():Promise<main.Env>;
 
 export function GetLog(arg1:string,arg2:number,arg3:number):Promise<Array<gitx.Commit>>;
 
-export function GetRepo(arg1:string):Promise<main.RepoView>;
+export function GetRepo(arg1:string):Promise<repos.View>;
 
 export function GetSettings():Promise<store.Settings>;
-
-export function HideWindow():Promise<void>;
-
-export function IsMini():Promise<boolean>;
 
 export function ListBranches(arg1:string):Promise<Array<gitx.Branch>>;
 
 export function ListGroups():Promise<Array<string>>;
 
-export function ListRepos():Promise<Array<main.RepoView>>;
+export function ListRepos():Promise<Array<repos.View>>;
 
 export function OpenIn(arg1:string,arg2:string):Promise<void>;
 
@@ -86,8 +81,6 @@ export function SetPinned(arg1:string,arg2:boolean):Promise<void>;
 
 export function ShowCommit(arg1:string,arg2:string):Promise<gitx.CommitDetail>;
 
-export function ShowWindow():Promise<void>;
-
 export function StageFiles(arg1:string,arg2:Array<string>):Promise<gitx.OpResult>;
 
 export function StashAction(arg1:string,arg2:string,arg3:string):Promise<gitx.OpResult>;
@@ -95,10 +88,6 @@ export function StashAction(arg1:string,arg2:string,arg3:string):Promise<gitx.Op
 export function StashPush(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
 
 export function SwitchBranch(arg1:string,arg2:string,arg3:boolean):Promise<gitx.OpResult>;
-
-export function ToggleMiniPanel():Promise<void>;
-
-export function ToggleWindow():Promise<void>;
 
 export function UndoLastCommit(arg1:string):Promise<gitx.OpResult>;
 

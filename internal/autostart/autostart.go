@@ -5,6 +5,7 @@ package autostart
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
@@ -32,8 +33,13 @@ func Enabled() bool {
 	return err == nil && v != ""
 }
 
-// Set adds or removes the Run entry, pointing at the running executable.
-func Set(on bool) error {
+// Set adds or removes the Run entry.
+//
+// exeName selects which binary to register, resolved beside the running one.
+// After the split that is the tray, not the window: launching a browser engine
+// at sign-in is the cost this whole change exists to avoid. An empty name
+// registers the running executable.
+func Set(on bool, exeName string) error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
 	if err != nil {
 		return err
@@ -52,6 +58,12 @@ func Set(on bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
+	}
+	if exeName != "" {
+		sibling := filepath.Join(filepath.Dir(exe), exeName)
+		if _, err := os.Stat(sibling); err == nil {
+			exe = sibling
+		}
 	}
 	// Quoted because Program Files paths contain spaces.
 	return k.SetStringValue(valueName, `"`+exe+`" `+minimisedFlag)

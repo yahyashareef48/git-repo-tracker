@@ -1,13 +1,18 @@
 <#
 .SYNOPSIS
-  Builds GitDeck: a portable exe and an NSIS installer.
+  Builds GitDeck: the tray companion, the full window, and an NSIS installer.
 
 .DESCRIPTION
-  The version lives in wails.json and is read from there, so the number baked
-  into the binary, the installer and the update check can never drift apart.
+  GitDeck ships as two binaries. GitDeckTray.exe is the half that runs all day:
+  a tray icon, a repository poller and a compact panel drawn without a browser.
+  GitDeck.exe is the full window and is launched on demand, so its WebView2
+  engine is only resident while someone is actually reading a diff.
 
-  Go and NSIS are put on PATH for this process only — neither needs to be there
-  permanently for the app to build.
+  The tray is built first, because the installer packages it alongside the
+  window out of build\bin.
+
+  The version lives in wails.json and is read from there, so the number baked
+  into both binaries, the installer and the update check cannot drift apart.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\build.ps1
@@ -23,6 +28,10 @@ $go = 'C:\Program Files\Go\bin'
 $nsis = 'C:\Program Files (x86)\NSIS'
 $gobin = Join-Path $env:USERPROFILE 'go\bin'
 $env:Path = "$go;$nsis;$env:Path;$gobin"
+
+# Neither binary needs cgo. Saying so keeps a stray gcc on PATH from quietly
+# changing how they are built.
+$env:CGO_ENABLED = '0'
 
 foreach ($tool in @('go', 'wails')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
@@ -48,12 +57,26 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'the frontend does not typecheck' }
 } finally { Pop-Location }
 
+# Anything still running holds its own file open and fails the build.
+Get-Process GitDeck, GitDeckTray -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
+New-Item -ItemType Directory -Force 'build\bin' | Out-Null
+
+# -H windowsgui keeps a console window from flashing behind the tray icon.
+Write-Host 'Building the tray companion' -ForegroundColor DarkGray
+go build -trimpath -ldflags "-H windowsgui -s -w -X main.version=$version" `
+    -o 'build\bin\GitDeckTray.exe' ./cmd/traydeck
+if ($LASTEXITCODE -ne 0) { throw 'the tray build failed' }
+
+Write-Host 'Building the window' -ForegroundColor DarkGray
 $hasNsis = $null -ne (Get-Command makensis -ErrorAction SilentlyContinue)
 if ($hasNsis) {
-    wails build -clean -nsis -ldflags "-X main.version=$version"
+    wails build -nsis -ldflags "-X main.version=$version"
 } else {
-    Write-Warning 'NSIS not found — building the portable exe only.'
-    wails build -clean -ldflags "-X main.version=$version"
+    Write-Warning 'NSIS not found — building the portable exes only.'
+    wails build -ldflags "-X main.version=$version"
 }
 if ($LASTEXITCODE -ne 0) { throw 'wails build failed' }
 

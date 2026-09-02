@@ -6,13 +6,10 @@ import {
   CheckUpdate,
   ChooseFolder,
   CopyToClipboard,
-  EnterMini,
-  ExitMini,
   GetAutostart,
   GetEnv,
   GetRepo,
   GetSettings,
-  IsMini,
   ListRepos,
   ListGroups,
   OpenURL,
@@ -25,9 +22,9 @@ import {
   SetGroup,
   SetPinned,
 } from '../../wailsjs/go/main/App'
-import type { github, gitx, main, store, update } from '../../wailsjs/go/models'
+import type { github, gitx, main, repos, store, update } from '../../wailsjs/go/models'
 
-export type RepoView = main.RepoView
+export type RepoView = repos.View
 export type ScanResult = main.ScanResult
 export type Env = main.Env
 export type Health = github.Health
@@ -148,8 +145,6 @@ type State = {
   updateChecking: boolean
   settingsOpen: boolean
   bulk: Bulk
-  /** 'mini' is the compact tray panel; the app has only one real window. */
-  mode: 'full' | 'mini'
   /** '' = every repo, UNGROUPED = only repos with no group, else that group. */
   groupFilter: string
   /** Repos whose "move to group" dialog is open; empty when closed. */
@@ -170,9 +165,6 @@ type State = {
   setAutostart: (on: boolean) => Promise<void>
   toggleSettings: () => void
   dismissBulk: () => void
-  setMode: (m: 'full' | 'mini') => void
-  enterMini: () => Promise<void>
-  exitMini: () => Promise<void>
   refresh: () => Promise<void>
   refreshOne: (path: string) => Promise<void>
   setQuery: (q: string) => void
@@ -269,7 +261,6 @@ export const useRepos = create<State>((set, get) => ({
   updateChecking: false,
   settingsOpen: false,
   bulk: null,
-  mode: 'full',
   groupFilter: '',
   groupTargets: [],
   branchTarget: null,
@@ -286,12 +277,6 @@ export const useRepos = create<State>((set, get) => ({
     await get().refresh()
     await get().checkHealth()
     await get().loadSettings()
-    try {
-      // The window may already be in panel mode when the frontend reloads.
-      set({ mode: (await IsMini()) ? 'mini' : 'full' })
-    } catch {
-      // Mode is cosmetic; a failure here must not block startup.
-    }
   },
 
   async loadSettings() {
@@ -358,26 +343,6 @@ export const useRepos = create<State>((set, get) => ({
 
   toggleSettings() {
     set((s) => ({ settingsOpen: !s.settingsOpen }))
-  },
-
-  setMode(m) {
-    set({ mode: m })
-  },
-
-  async enterMini() {
-    try {
-      await EnterMini()
-    } catch (e) {
-      get().toast('error', message(e))
-    }
-  },
-
-  async exitMini() {
-    try {
-      await ExitMini()
-    } catch (e) {
-      get().toast('error', message(e))
-    }
   },
 
   dismissBulk() {

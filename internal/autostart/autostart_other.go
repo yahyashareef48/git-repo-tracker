@@ -7,6 +7,6 @@ package autostart
 
 func Enabled() bool { return false }
 
-func Set(bool) error { return nil }
+func Set(bool, string) error { return nil }
 
 func LaunchedMinimised() bool { return false }

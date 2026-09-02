@@ -374,7 +374,30 @@ export namespace main {
 		    return a;
 		}
 	}
-	export class RepoView {
+	export class ScanResult {
+	    path: string;
+	    name: string;
+	    branch: string;
+	    tracked: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScanResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.branch = source["branch"];
+	        this.tracked = source["tracked"];
+	    }
+	}
+
+}
+
+export namespace repos {
+	
+	export class View {
 	    path: string;
 	    name: string;
 	    pinned: boolean;
@@ -383,7 +406,7 @@ export namespace main {
 	    worktrees: gitx.Status[];
 	
 	    static createFrom(source: any = {}) {
-	        return new RepoView(source);
+	        return new View(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -413,24 +436,6 @@ export namespace main {
 		    }
 		    return a;
 		}
-	}
-	export class ScanResult {
-	    path: string;
-	    name: string;
-	    branch: string;
-	    tracked: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ScanResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.path = source["path"];
-	        this.name = source["name"];
-	        this.branch = source["branch"];
-	        this.tracked = source["tracked"];
-	    }
 	}
 
 }
