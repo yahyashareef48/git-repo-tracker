@@ -22,25 +22,61 @@ var (
 	procSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procDpiForSystem  = user32.NewProc("GetDpiForSystem")
 	procSetWindowPos  = user32.NewProc("SetWindowPos")
+	procGetWindowLong = user32.NewProc("GetWindowLongPtrW")
+	procSetWindowLong = user32.NewProc("SetWindowLongPtrW")
 )
 
 // SetWindowPos arguments for pinning a window above the others without
 // moving, resizing or focusing it.
 const (
-	hwndTopmost   = ^uintptr(0) // (HWND)-1
-	swpNoSize     = 0x0001
-	swpNoMove     = 0x0002
-	swpNoActivate = 0x0010
+	hwndTopmost       = ^uintptr(0) // (HWND)-1
+	swpNoSize         = 0x0001
+	swpNoMove         = 0x0002
+	swpNoActivate     = 0x0010
+	swpFrameChanged   = 0x0020
+	swpAsyncWindowPos = 0x4000
+)
+
+// Extended window styles. A tool window is kept out of the taskbar and out
+// of alt-tab, which is what makes this a widget rather than an application.
+const (
+	gwlExStyle     = ^uintptr(19) // -20
+	wsExToolWindow = 0x00000080
+	wsExAppWindow  = 0x00040000
 )
 
 // pinOnTop keeps the window above other windows. A widget that disappears
 // behind whatever you click next is not a widget, it is a window you have to
 // go and find again.
+// makeWidget pins the window above the others and takes it out of the
+// taskbar, so it behaves like a desk accessory instead of an app.
+func makeWidget(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	go func() {
+		ex, _, _ := procGetWindowLong.Call(hwnd, gwlExStyle)
+		ex = (ex | wsExToolWindow) &^ wsExAppWindow
+		procSetWindowLong.Call(hwnd, gwlExStyle, ex)
+		// The frame has to be told it changed or the taskbar keeps the button.
+		procSetWindowPos.Call(hwnd, hwndTopmost, 0, 0, 0, 0,
+			swpNoMove|swpNoSize|swpNoActivate|swpFrameChanged|swpAsyncWindowPos)
+	}()
+}
+
 func pinOnTop(hwnd uintptr) {
 	if hwnd == 0 {
 		return
 	}
-	procSetWindowPos.Call(hwnd, hwndTopmost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+	// SetWindowPos sends messages to the thread that owns the window and
+	// waits for them to be handled. Gio owns the window on the OS main
+	// thread, and that thread is what is waiting for this event handler to
+	// return, so calling it here deadlocks: the panel hangs on open and
+	// Windows paints the "Not Responding" ghost frame over it. ASYNCWINDOWPOS
+	// posts the request instead of sending it, and the goroutine keeps even
+	// that off the event loop.
+	go procSetWindowPos.Call(hwnd, hwndTopmost, 0, 0, 0, 0,
+		swpNoMove|swpNoSize|swpNoActivate|swpAsyncWindowPos)
 }
 
 const smCXScreen = 0
