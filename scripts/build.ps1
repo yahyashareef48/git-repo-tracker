@@ -44,6 +44,14 @@ if (-not $version) { throw 'wails.json has no info.productVersion' }
 
 Write-Host "Building GitDeck $version" -ForegroundColor Cyan
 
+# main.go embeds frontend/dist, which does not exist in a fresh clone, so
+# anything that compiles the root package fails before Wails ever builds the
+# frontend. A placeholder keeps vet and test honest; Wails overwrites it.
+if (-not (Test-Path 'frontend\dist\index.html')) {
+    New-Item -ItemType Directory -Force 'frontend\dist' | Out-Null
+    Set-Content 'frontend\dist\index.html' '<!doctype html>' -Encoding utf8
+}
+
 # Fail before packaging rather than after, so a broken build never produces an
 # installer that looks fine.
 go vet ./...
@@ -53,6 +61,12 @@ if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
 
 Push-Location frontend
 try {
+    # A fresh clone has no node_modules, and npx would then try to fetch
+    # TypeScript on the fly instead of typechecking.
+    if (-not (Test-Path 'node_modules')) {
+        npm install --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
+    }
     npx tsc --noEmit
     if ($LASTEXITCODE -ne 0) { throw 'the frontend does not typecheck' }
 } finally { Pop-Location }

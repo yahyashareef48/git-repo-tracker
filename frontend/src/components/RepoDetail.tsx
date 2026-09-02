@@ -53,7 +53,7 @@ export function RepoDetail() {
       ) : (
         <div className="flex min-h-0 flex-1">
           <FilePanel />
-          <div className="min-w-0 flex-1 border-l border-line">
+          <div className="min-h-0 min-w-0 flex-1 border-l border-line">
             <DiffPane />
           </div>
         </div>
@@ -167,7 +167,7 @@ function FilePanel() {
     staged.length + unstaged.length + untracked.length + conflicted.length === 0
 
   return (
-    <div className="flex w-[320px] shrink-0 flex-col overflow-y-auto">
+    <div className="flex min-h-0 w-[320px] shrink-0 flex-col overflow-y-auto">
       {c?.error && (
         <div className="px-3 py-2 text-[12px] text-conflict">{c.error}</div>
       )}

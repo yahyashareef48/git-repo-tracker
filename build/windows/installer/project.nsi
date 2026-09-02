@@ -97,12 +97,15 @@ Section
     !insertmacro wails.files
 
     # The tray companion ships alongside the window. It is the half that runs
-    # all day, so it is what the shortcuts and the startup entry point at; it
-    # launches the window on demand.
+    # all day; the window launches it if it is not already there.
     File "..\..\bin\GitDeckTray.exe"
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\GitDeckTray.exe"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\GitDeckTray.exe"
+    # Shortcuts open the window, because that is what clicking an app is
+    # expected to do. The window starts the tray itself if none is running, so
+    # this still leaves an icon behind. Only the startup entry points at the
+    # tray, since signing in should not launch a browser engine.
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
