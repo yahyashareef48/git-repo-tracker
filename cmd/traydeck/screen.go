@@ -21,7 +21,27 @@ var (
 	user32            = windows.NewLazySystemDLL("user32.dll")
 	procSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procDpiForSystem  = user32.NewProc("GetDpiForSystem")
+	procSetWindowPos  = user32.NewProc("SetWindowPos")
 )
+
+// SetWindowPos arguments for pinning a window above the others without
+// moving, resizing or focusing it.
+const (
+	hwndTopmost   = ^uintptr(0) // (HWND)-1
+	swpNoSize     = 0x0001
+	swpNoMove     = 0x0002
+	swpNoActivate = 0x0010
+)
+
+// pinOnTop keeps the window above other windows. A widget that disappears
+// behind whatever you click next is not a widget, it is a window you have to
+// go and find again.
+func pinOnTop(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	procSetWindowPos.Call(hwnd, hwndTopmost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+}
 
 const smCXScreen = 0
 
