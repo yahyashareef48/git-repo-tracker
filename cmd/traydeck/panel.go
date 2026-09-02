@@ -95,7 +95,7 @@ func runPanel(ctx context.Context, s *state) {
 			// Gio hands over the HWND once the window exists, which is the
 			// only way to reach the Windows calls it does not wrap.
 			ui.hwnd = e.HWND
-			pinOnTop(ui.hwnd)
+			makeWidget(ui.hwnd)
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
 			ui.layout(ctx, gtx)
