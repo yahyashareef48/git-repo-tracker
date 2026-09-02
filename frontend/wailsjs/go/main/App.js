@@ -46,12 +46,8 @@ export function DiscardFiles(arg1, arg2, arg3) {
   return window['go']['main']['App']['DiscardFiles'](arg1, arg2, arg3);
 }
 
-export function EnterMini() {
-  return window['go']['main']['App']['EnterMini']();
-}
-
-export function ExitMini() {
-  return window['go']['main']['App']['ExitMini']();
+export function EnsureTray() {
+  return window['go']['main']['App']['EnsureTray']();
 }
 
 export function GetAutostart() {
@@ -84,14 +80,6 @@ export function GetRepo(arg1) {
 
 export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
-}
-
-export function HideWindow() {
-  return window['go']['main']['App']['HideWindow']();
-}
-
-export function IsMini() {
-  return window['go']['main']['App']['IsMini']();
 }
 
 export function ListBranches(arg1) {
@@ -162,10 +150,6 @@ export function ShowCommit(arg1, arg2) {
   return window['go']['main']['App']['ShowCommit'](arg1, arg2);
 }
 
-export function ShowWindow() {
-  return window['go']['main']['App']['ShowWindow']();
-}
-
 export function StageFiles(arg1, arg2) {
   return window['go']['main']['App']['StageFiles'](arg1, arg2);
 }
@@ -180,14 +164,6 @@ export function StashPush(arg1, arg2, arg3) {
 
 export function SwitchBranch(arg1, arg2, arg3) {
   return window['go']['main']['App']['SwitchBranch'](arg1, arg2, arg3);
-}
-
-export function ToggleMiniPanel() {
-  return window['go']['main']['App']['ToggleMiniPanel']();
-}
-
-export function ToggleWindow() {
-  return window['go']['main']['App']['ToggleWindow']();
 }
 
 export function UndoLastCommit(arg1) {

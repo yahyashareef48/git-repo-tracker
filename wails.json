@@ -13,8 +13,8 @@
   "info": {
     "companyName": "yahyashareef48",
     "productName": "GitDeck",
-    "productVersion": "0.1.0",
+    "productVersion": "0.2.0",
     "copyright": "Copyright © 2026 yahyashareef48",
-    "comments": "Track and sync every local git repository from one window."
+    "comments": "Track and sync every local git repository from one window, with a native tray panel."
   }
 }

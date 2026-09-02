@@ -1,29 +1,27 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	"gitdeck/internal/autostart"
 	"gitdeck/internal/github"
 	"gitdeck/internal/gitx"
+	"gitdeck/internal/repos"
 	"gitdeck/internal/store"
-	"gitdeck/internal/tray"
 	"gitdeck/internal/update"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// trayExe is the tray companion, expected to sit beside this binary.
+const trayExe = "GitDeckTray.exe"
 
 // App is the bound API surface. Every method here is callable from the
 // frontend; nothing else is.
@@ -32,36 +30,8 @@ type App struct {
 	store *store.Store
 	// storeErr is surfaced to the UI rather than crashing at startup.
 	storeErr string
-	// hidden tracks whether the window is tucked away in the tray, so the
-	// tray's left click knows which way to toggle.
-	hidden atomic.Bool
-	// quitting distinguishes "the user chose Quit" from "the user closed the
-	// window", which otherwise look identical to OnBeforeClose.
-	quitting atomic.Bool
-	// mini is true while the window is the compact tray panel.
-	mini atomic.Bool
-	// The full window's size, remembered across a trip through mini mode.
-	// Size only: positions are never stored or restored, see EnterMini.
-	geoMu        sync.Mutex
-	fullW, fullH int
-	// hasGeo is false until a genuinely full-sized window has been measured.
-	hasGeo bool
-	// fullMaximised remembers a maximised window, which has no meaningful
-	// size or position of its own to restore.
-	fullMaximised bool
 	// version is stamped into the binary at build time.
 	version string
-}
-
-// RepoView is one row of the repo list: the tracked entry, its status, and any
-// linked worktrees rendered as children.
-type RepoView struct {
-	Path      string        `json:"path"`
-	Name      string        `json:"name"`
-	Pinned    bool          `json:"pinned"`
-	Group     string        `json:"group"`
-	Status    gitx.Status   `json:"status"`
-	Worktrees []gitx.Status `json:"worktrees"`
 }
 
 // Env reports which external tools are available, so the UI can explain a
@@ -87,17 +57,9 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.startTray()
-
-	// Launched by the Windows Run entry, or configured to start hidden: go
-	// straight to the tray rather than flashing a window first.
-	// Only hide once the icon is genuinely in the tray; hiding first would
-	// leave no way to get the window back if the tray never appears.
-	wantHidden := autostart.LaunchedMinimised() ||
-		(a.store != nil && a.store.Settings().StartMinimised)
-	if wantHidden && tray.WaitReady(3*time.Second) {
-		a.HideWindow()
-	}
+	// The tray is a separate process now. Launching the window directly should
+	// still leave the user with an icon, so make sure one is running.
+	go a.EnsureTray()
 }
 
 // context returns a usable context even before startup has run.
@@ -123,92 +85,35 @@ func (a *App) GetEnv() Env {
 	return e
 }
 
-// ListRepos returns every tracked repo with fresh status. Repos are read
-// concurrently: ten repos on a cold cache is otherwise a visible stall.
-func (a *App) ListRepos() []RepoView {
-	if a.store == nil {
-		return nil
-	}
-	entries := a.store.List()
-	views := make([]RepoView, len(entries))
+// ListRepos returns every tracked repo with fresh status.
+func (a *App) ListRepos() []repos.View {
+	views := repos.List(a.context(), a.store)
 
-	var wg sync.WaitGroup
-	// Bound concurrency: spawning one git per repo is fine, spawning fifty
-	// at once on a laptop is not.
-	sem := make(chan struct{}, 12)
-
-	for i, e := range entries {
-		wg.Add(1)
-		go func(i int, e store.Entry) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			views[i] = a.buildView(e)
-		}(i, e)
-	}
-	wg.Wait()
-
-	// Pinned first, then the user's stored order.
-	sort.SliceStable(views, func(i, j int) bool {
-		return views[i].Pinned && !views[j].Pinned
-	})
-
-	// The list is refreshed on launch, on focus and after every operation, so
-	// this is the natural place to keep the tray honest.
-	counts := trayCounts(views)
-	tray.SetStatus(counts)
-
-	// The window is frameless, but the title is still what the taskbar and
-	// alt-tab show, so it carries the same summary.
+	// The window is frameless, so the title is what the taskbar and alt-tab
+	// show; it carries the summary the tray badge also shows.
+	c := repos.Summarise(views)
 	title := "GitDeck"
-	if counts.Unpushed > 0 {
-		title += " — " + strconv.Itoa(counts.Unpushed) + " to push"
-	} else if counts.Dirty > 0 {
-		title += " — " + strconv.Itoa(counts.Dirty) + " with changes"
+	if c.Unpushed > 0 {
+		title += " - " + strconv.Itoa(c.Unpushed) + " to push"
+	} else if c.Dirty > 0 {
+		title += " - " + strconv.Itoa(c.Dirty) + " with changes"
 	}
 	runtime.WindowSetTitle(a.context(), title)
 
 	return views
 }
 
-func (a *App) buildView(e store.Entry) RepoView {
-	ctx := a.context()
-	v := RepoView{Path: e.Path, Name: e.Name, Pinned: e.Pinned, Group: e.Group}
-
-	if _, err := os.Stat(e.Path); err != nil {
-		v.Status = gitx.Status{Path: e.Path, Name: e.Name, Error: "folder is missing"}
-		return v
-	}
-
-	v.Status = gitx.GetStatus(ctx, e.Path)
-	if v.Status.Name != "" {
-		v.Name = v.Status.Name
-	}
-
-	for _, wt := range gitx.ListWorktrees(ctx, e.Path) {
-		if wt.IsMain || sameDir(wt.Path, e.Path) {
-			continue
-		}
-		if _, err := os.Stat(wt.Path); err != nil {
-			continue
-		}
-		v.Worktrees = append(v.Worktrees, gitx.GetStatus(ctx, wt.Path))
-	}
-	return v
-}
-
 // GetRepo returns fresh status for a single repo, for targeted refreshes.
 //
 // The stored entry is looked up rather than synthesised: building one from the
-// path alone drops the repo's group and pin, which then vanish from the list
-// the moment anything refreshes a single row.
-func (a *App) GetRepo(path string) RepoView {
+// path alone drops the repo's group and pin.
+func (a *App) GetRepo(path string) repos.View {
 	if a.store != nil {
 		if e, ok := a.store.Get(path); ok {
-			return a.buildView(e)
+			return repos.Build(a.context(), e)
 		}
 	}
-	return a.buildView(store.Entry{Path: path, Name: filepath.Base(path)})
+	return repos.Build(a.context(), store.Entry{Path: path, Name: filepath.Base(path)})
 }
 
 // ChooseFolder opens the native folder picker and returns the chosen path, or
@@ -439,10 +344,6 @@ func (a *App) OpenURL(url string) {
 	}
 }
 
-func sameDir(a, b string) bool {
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
-}
-
 // RepoDetail is everything the changes panel needs in one round trip.
 type RepoDetail struct {
 	Path        string       `json:"path"`
@@ -575,200 +476,44 @@ func (a *App) RemoveWorktree(path, folder string, force bool) gitx.OpResult {
 	return gitx.RemoveWorktree(a.context(), path, folder, force)
 }
 
-// --- Tray and startup -------------------------------------------------------
+// --- Window lifecycle ------------------------------------------------------
 
-// trayCounts summarises the tracked repos for the tray tooltip and badge.
-func trayCounts(views []RepoView) tray.Status {
-	s := tray.Status{Repos: len(views)}
-	for _, v := range views {
-		if v.Status.Ahead > 0 || (v.Status.HasRemote && v.Status.Upstream == "") {
-			s.Unpushed++
-		}
-		if v.Status.Dirty() {
-			s.Dirty++
-		}
-		for _, wt := range v.Worktrees {
-			if wt.Ahead > 0 {
-				s.Unpushed++
-			}
-			if wt.Dirty() {
-				s.Dirty++
-			}
-		}
-	}
-	return s
-}
-
-// ShowWindow brings the window to the front from the tray.
-func (a *App) ShowWindow() {
-	ctx := a.context()
-	runtime.WindowShow(ctx)
-	runtime.WindowUnminimise(ctx)
-	a.hidden.Store(false)
-}
-
-// HideWindow tucks the app back into the tray.
-func (a *App) HideWindow() {
-	runtime.WindowHide(a.context())
-	a.hidden.Store(true)
-}
-
-// ToggleWindow is what a left click on the tray icon does.
-func (a *App) ToggleWindow() {
-	if a.hidden.Load() {
-		a.ShowWindow()
+// EnsureTray starts the tray companion if it is not already running.
+//
+// The tray owns the icon and the compact panel now, so launching the window on
+// its own — from the Start menu, say — would otherwise leave the user with no
+// tray at all until they next signed in.
+func (a *App) EnsureTray() {
+	exe, err := os.Executable()
+	if err != nil {
 		return
 	}
-	a.HideWindow()
+	target := filepath.Join(filepath.Dir(exe), trayExe)
+	if _, err := os.Stat(target); err != nil {
+		return
+	}
+	// The tray refuses to start twice on its own, so this is safe to call
+	// unconditionally; a second copy exits immediately.
+	cmd := exec.Command(target)
+	cmd.Dir = filepath.Dir(target)
+	if cmd.Start() == nil && cmd.Process != nil {
+		go func() { _ = cmd.Wait() }()
+	}
 }
 
-// QuitApp exits for real, rather than hiding to the tray.
-func (a *App) QuitApp() {
-	a.quitting.Store(true)
-	tray.Stop()
-	runtime.Quit(a.context())
-}
-
-// GetAutostart reports whether Windows launches GitDeck at sign-in. The
-// registry is the source of truth, not our settings file, so an entry removed
-// through Task Manager is reflected honestly.
+// GetAutostart reports whether Windows launches GitDeck at sign-in.
 func (a *App) GetAutostart() bool {
 	return autostart.Enabled()
 }
 
-// SetAutostart adds or removes the Windows startup entry.
+// SetAutostart adds or removes the Windows startup entry. It registers the tray
+// binary rather than this one: starting a browser engine at login is exactly
+// what the split exists to avoid.
 func (a *App) SetAutostart(on bool) error {
-	return autostart.Set(on)
+	return autostart.Set(on, trayExe)
 }
 
-// beforeClose keeps the app alive in the tray instead of exiting, unless the
-// user picked Quit or turned the behaviour off.
-func (a *App) beforeClose(ctx context.Context) bool {
-	if a.quitting.Load() {
-		return false
-	}
-	if a.store != nil && !a.store.Settings().CloseToTray {
-		tray.Stop()
-		return false
-	}
-	// Never hide with no tray icon to restore from: the app would keep running
-	// invisibly with no way to bring it back or shut it down.
-	if !tray.Running() {
-		return false
-	}
-	a.HideWindow()
-	return true
-}
-
-// startTray wires the notification-area icon to the app. Bulk operations are
-// emitted as events rather than run here: the frontend owns what "all" means,
-// since it knows the current group filter and selection.
-func (a *App) startTray() {
-	img, err := png.Decode(bytes.NewReader(appIconPNG))
-	if err != nil {
-		return
-	}
-	_ = tray.Start(img, tray.Callbacks{
-		// Left click opens the compact panel rather than the whole app: the
-		// point of the tray is a quick look, not a context switch.
-		Show:   a.ExitMini,
-		Toggle: a.ToggleMiniPanel,
-		FetchAll: func() {
-			a.ShowWindow()
-			runtime.EventsEmit(a.context(), "tray:fetch-all")
-		},
-		SyncAll: func() {
-			a.ShowWindow()
-			runtime.EventsEmit(a.context(), "tray:sync-all")
-		},
-		Quit: a.QuitApp,
-	})
-}
-
-// --- Mini panel -------------------------------------------------------------
-
-// Wails v2 gives an app exactly one window, so the compact tray panel is this
-// same window resized and pinned on top — not a second one.
-const (
-	miniWidth  = 400
-	miniHeight = 540
-	fullMinW   = 880
-	fullMinH   = 560
-)
-
-// IsMini reports whether the window is currently the compact panel.
-func (a *App) IsMini() bool { return a.mini.Load() }
-
-// EnterMini shrinks the window into a tray-side panel, pinned on top.
-//
-// The window is resized in place — its top-left corner does not move, and no
-// position is ever computed. That is deliberate. Wails reports screen sizes
-// without their offsets, and this machine (like many) has a second monitor at
-// a different DPI, so any absolute coordinate we calculate is in the wrong
-// space and throws the window onto another display or off the desktop. Growing
-// and shrinking from a corner that is already on screen cannot do that.
-func (a *App) EnterMini() {
-	ctx := a.context()
-
-	// Windows ignores a resize while a window is maximised: the panel would
-	// silently stay full-screen and only appear to move. Un-maximise first,
-	// which also reveals the size actually worth restoring later.
-	maximised := runtime.WindowIsMaximised(ctx)
-	if maximised {
-		runtime.WindowUnmaximise(ctx)
-	}
-
-	w, h := runtime.WindowGetSize(ctx)
-	if !a.mini.Load() && w >= fullMinW && h >= fullMinH {
-		// Guarded on size: after a restart the window can already be
-		// panel-sized, and recording that as "full" would shrink it forever.
-		a.geoMu.Lock()
-		a.fullW, a.fullH = w, h
-		a.hasGeo = true
-		a.fullMaximised = maximised
-		a.geoMu.Unlock()
-	}
-
-	// The configured minimum is far larger than the panel, so it has to be
-	// relaxed before the resize will take.
-	runtime.WindowSetMinSize(ctx, 320, 360)
-	runtime.WindowSetSize(ctx, miniWidth, miniHeight)
-	runtime.WindowSetAlwaysOnTop(ctx, true)
-
-	a.mini.Store(true)
-	a.ShowWindow()
-	runtime.EventsEmit(ctx, "window:mode", "mini")
-}
-
-// ExitMini restores the full window, in place.
-func (a *App) ExitMini() {
-	ctx := a.context()
-	runtime.WindowSetAlwaysOnTop(ctx, false)
-	runtime.WindowSetMinSize(ctx, fullMinW, fullMinH)
-
-	a.geoMu.Lock()
-	w, h, maximised := a.fullW, a.fullH, a.fullMaximised
-	a.geoMu.Unlock()
-
-	if w < fullMinW || h < fullMinH {
-		w, h = 1180, 780
-	}
-	runtime.WindowSetSize(ctx, w, h)
-	if maximised {
-		runtime.WindowMaximise(ctx)
-	}
-
-	a.mini.Store(false)
-	a.ShowWindow()
-	runtime.EventsEmit(ctx, "window:mode", "full")
-}
-
-// ToggleMiniPanel is what a left click on the tray icon does: show the panel,
-// or put it away if it is already the thing on screen.
-func (a *App) ToggleMiniPanel() {
-	if a.mini.Load() && !a.hidden.Load() {
-		a.HideWindow()
-		return
-	}
-	a.EnterMini()
+// QuitApp closes the window. The tray keeps running.
+func (a *App) QuitApp() {
+	runtime.Quit(a.context())
 }

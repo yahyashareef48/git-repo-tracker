@@ -96,8 +96,13 @@ Section
 
     !insertmacro wails.files
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    # The tray companion ships alongside the window. It is the half that runs
+    # all day, so it is what the shortcuts and the startup entry point at; it
+    # launches the window on demand.
+    File "..\..\bin\GitDeckTray.exe"
+
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\GitDeckTray.exe"
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\GitDeckTray.exe"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
@@ -108,7 +113,15 @@ SectionEnd
 Section "uninstall"
     !insertmacro wails.setShellContext
 
+    # Both halves must be stopped before their files can be replaced or removed.
+    nsExec::Exec 'taskkill /F /IM GitDeckTray.exe'
+    nsExec::Exec 'taskkill /F /IM ${PRODUCT_EXECUTABLE}'
+
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
+
+    # The tray registers itself for startup; leaving that behind would point
+    # Windows at an executable that no longer exists.
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "GitDeck"
 
     RMDir /r $INSTDIR
 

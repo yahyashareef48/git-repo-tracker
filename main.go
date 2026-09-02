@@ -14,12 +14,6 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// appIconPNG is the source for the tray icon, badge included. Embedding it
-// keeps the tray working from a portable exe with no files beside it.
-//
-//go:embed build/appicon.png
-var appIconPNG []byte
-
 // version is stamped at build time with -ldflags "-X main.version=x.y.z".
 // A plain build leaves it as "dev", which the updater treats as always current.
 var version = "dev"
@@ -75,9 +69,8 @@ func main() {
 			WebviewGpuIsDisabled: true,
 		},
 		OnStartup: app.startup,
-		// Closing the window hides to the tray instead of exiting, unless the
-		// user turned that off or picked Quit from the tray menu.
-		OnBeforeClose: app.beforeClose,
+		// Closing exits. The tray process keeps watching, so there is nothing
+		// to hide to and nothing left running invisibly.
 		Bind: []interface{}{
 			app,
 		},

@@ -98,6 +98,39 @@ func New() (*Store, error) {
 	return s, nil
 }
 
+// Reload re-reads the file from disk, discarding what is held in memory.
+//
+// Two processes now share this file: the tray polls repositories while the
+// full window edits them. Without this the tray would serve whatever it read
+// at launch for as long as it ran.
+func (s *Store) Reload() error {
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var fresh data
+	if err := json.Unmarshal(raw, &fresh); err != nil {
+		// A half-written file is not worth throwing away good state for; the
+		// next tick will read it again.
+		return err
+	}
+	if fresh.Settings.AutoFetchMinutes <= 0 {
+		fresh.Settings.AutoFetchMinutes = 5
+	}
+	if fresh.Settings.WatchMode == "" {
+		fresh.Settings.WatchMode = "all"
+	}
+
+	s.mu.Lock()
+	s.d = fresh
+	s.mu.Unlock()
+	return nil
+}
+
 // File returns the on-disk location, for display in settings.
 func (s *Store) File() string { return s.path }
 

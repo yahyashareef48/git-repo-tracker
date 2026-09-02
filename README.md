@@ -46,9 +46,23 @@ It is a git client scoped to *many repositories at once* rather than one:
 
 ## How it works
 
-[Wails v2](https://wails.io): a Go core with a React frontend rendered by the
-WebView2 runtime already present on Windows, so no browser is bundled — the app
-is a ~12 MB exe rather than ~180 MB.
+GitDeck ships as **two binaries**, because the two halves have very different
+costs.
+
+| | what it is | when it runs |
+|---|---|---|
+| `GitDeckTray.exe` | tray icon, repository poller, and the compact panel drawn natively with [Gio](https://gioui.org) | always |
+| `GitDeck.exe` | the full window: diffs, history, branch picker. [Wails v2](https://wails.io) + React on WebView2 | on demand |
+
+They were one program until v0.2. The problem was that WebView2 *is* Chromium,
+and it stayed resident all day so a tray icon could exist. The panel — a list of
+text rows — is what actually gets looked at, and it was costing the same as the
+diff viewer because it was the same window.
+
+Now the tray owns the icon, polls git, and draws the panel itself with no
+browser involved. The window is launched when you ask for it and exits when you
+close it. Both binaries import the same `internal/` packages, so there is one
+implementation of every git operation.
 
 Every git operation shells out to **git's own CLI**. No libgit2, no reimplemented
 plumbing: behaviour is exactly what you would get in a terminal, and stderr goes
@@ -62,25 +76,30 @@ own terminal.
 
 ### Footprint
 
-Measured on a release build, ten repositories tracked:
+Measured on release builds with ten repositories tracked.
+
+| state | v0.1 (one binary) | **v0.2 (split)** |
+|---|---|---|
+| sitting in the tray, before the panel is opened | 408 MB | **23 MB** |
+| sitting in the tray, after the panel has been opened once | 408 MB | **49 MB** |
+| glancing at the panel | 408 MB | **56 MB** |
+| full window open, reading a diff | 436 MB | 422 MB + 49 MB tray |
+
+Where the remaining numbers come from:
+
+- **23 MB** is one Go process: the poller, the tray icon and nothing else.
+- **49 MB** is that same process after the panel has been drawn once. Gio loads
+  the graphics stack on first use and Windows does not unload it when the window
+  is destroyed, so the floor rises and stays there. Handing freed pages back
+  with `debug.FreeOSMemory()` recovers what Go itself is holding, not that.
+- **422 MB** is unchanged: it is Chromium, and nothing in this split makes the
+  browser cheaper. It is only paid while the window is open.
 
 | | |
 |---|---|
-| Portable exe | **12.2 MB** |
-| Installer | **6.6 MB** |
-| Cold start to window | **~2.2 s** |
-| Memory, idle | **~390 MB** working set across 7 processes |
-
-That memory figure deserves a caveat, because it is the one thing about this
-stack that is routinely undersold: the 12 MB binary is real, but WebView2 *is*
-Chromium, and it starts a browser, GPU, renderer, crashpad and two utility
-processes whatever the page is. GitDeck turns off what it does not need — the
-GPU process, a large V8 heap, background networking — which is worth about
-20 MB. The rest is the runtime's floor.
-
-**The small binary buys disk space and download size, not RAM.** If memory
-matters more than anything else here, a native UI toolkit is the honest answer,
-and that would be a rewrite rather than a setting.
+| `GitDeck.exe` | 11.8 MB |
+| `GitDeckTray.exe` | 9.6 MB |
+| Installer (both) | 10.4 MB |
 
 ---
 

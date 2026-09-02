@@ -1,11 +1,10 @@
 # GitDeck v0.2 — split the tray from the browser
 
-A plan to cut idle memory by roughly 10×, by not keeping a browser engine
-loaded just to hold a tray icon.
+**Status: built and shipped.** What follows is the plan as written, with a
+section at the end recording what the estimates turned out to be worth.
 
-Nothing here is implemented. Numbers marked **measured** come from the v0.1.0
-release build on this machine with ten repositories tracked; everything else is
-an estimate and is labelled as one.
+The goal was to stop keeping a browser engine loaded all day just to hold a tray
+icon. Idle went from 408 MB to 23 MB.
 
 ---
 
@@ -168,3 +167,44 @@ whole app, and the payoff is only in the case that is already rare.
 The split gets the same idle number for a fraction of that work. If the panel
 turns out to cover ninety-nine percent of use, dropping the webview later
 becomes a much smaller decision than it is today.
+
+
+---
+
+## 8. What actually happened
+
+Built as `feat/split-tray`. Every estimate above, checked against the finished
+thing:
+
+| | estimated | **measured** |
+|---|---|---|
+| tray idle, panel never opened | ~30–40 MB | **23 MB** |
+| tray idle, after one panel open | (not predicted) | **49 MB** |
+| panel on screen | ~40–70 MB | **56 MB** |
+| full window | ~436 MB | **422 MB** |
+| effort | 3–4 sessions | one |
+
+Three things the plan got wrong:
+
+- **The Gio floor was underestimated, then beaten.** A hello-world Gio window
+  measured 65 MB, which looked like the panel alone would cost more than the
+  whole estimate. Most of it turned out to be Go holding freed pages: dropping
+  `GOGC` to 40 and calling `debug.FreeOSMemory()` after each poll took the tray
+  from 68 MB to 23 MB.
+- **Opening the panel raises the floor permanently.** Gio loads the graphics
+  stack on first use, and destroying the window does not unload it, so the tray
+  settles at 49 MB rather than returning to 23. Running the panel as a third,
+  short-lived process would fix that, at the cost of making the glance slower —
+  which is the one thing this change existed to make faster. Not worth it.
+- **The panel keeps no settings of its own.** The scope picker moved into the
+  window's Settings, where someone would look for it anyway.
+
+One bug worth recording, because it was invisible until the whole flow ran:
+the Gio panel and the Wails window both had the title `GitDeck`, and the
+launcher finds an already-running window *by title*. The panel therefore found
+itself, decided the window was already open, and never launched anything. The
+panel is titled `GitDeck Panel` now.
+
+Phase 0 (`EmptyWorkingSet`) was skipped. It was a way to make the number in Task
+Manager smaller without making the app cheaper, and the split made it moot: the
+window no longer lingers hidden, so there is nothing to trim.
