@@ -9,3 +9,8 @@
 *.exe  binary
 *.syso binary
 *.woff2 binary
+
+# Committed so a plain `go build` gets the tray's icon without needing
+# go-winres installed. Regenerate with:
+#   go run github.com/tc-hib/go-winres@v0.3.3 simply --icon build\windows\icon.ico
+*.syso binary
