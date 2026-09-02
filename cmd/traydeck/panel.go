@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"image"
 	"image/color"
 	"runtime/debug"
 	"strconv"
@@ -12,6 +12,7 @@ import (
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -19,16 +20,28 @@ import (
 	"gitdeck/internal/github"
 	"gitdeck/internal/gitx"
 	"gitdeck/internal/repos"
+	"gitdeck/internal/store"
 )
 
+// The panel sizes itself to its contents. A fixed box left most of the window
+// empty for anyone watching a handful of repositories, which is the common case
+// and the one worth optimising for.
 const (
-	panelW = 400
-	panelH = 540
+	panelWidth = 340
+
+	rowHeight    = 21
+	headerHeight = 30
+	footerHeight = 26
+	minPanelH    = 240
+	maxPanelH    = 620
+	// scopeRowH is a row in the scope picker, slightly taller than a repository
+	// row because it carries a tick.
+	scopeRowH = 22
 )
 
 // panelLoop owns the panel window. The window is created when asked for and
 // destroyed when closed, rather than kept hidden: a live window holds a GPU
-// context, and idling at zero is the entire reason this binary exists.
+// context, and idling cheaply is the entire reason this binary exists.
 func panelLoop(ctx context.Context, s *state) {
 	for {
 		select {
@@ -41,9 +54,9 @@ func panelLoop(ctx context.Context, s *state) {
 			s.askRefresh()
 			runPanel(ctx, s)
 
-			// Closing the panel tears down its GPU context and font atlas, but
-			// Go holds the freed pages by default. This process is about to go
-			// back to sleep for a long time, so hand them back.
+			// Closing tears down the GPU context and font atlas, but Go holds
+			// the freed pages by default. This process is about to go back to
+			// sleep for a long time, so hand them back.
 			debug.FreeOSMemory()
 		}
 	}
@@ -51,17 +64,19 @@ func panelLoop(ctx context.Context, s *state) {
 
 func runPanel(ctx context.Context, s *state) {
 	w := new(app.Window)
+	ui := newPanelUI(s, w)
+	ui.scopeOpen = s.startScopeOpen
+	ui.lastHeight = ui.wantHeight()
+
 	w.Option(
 		// Deliberately not "GitDeck": the full window uses that title, and the
 		// launcher finds an already-running window by title. Sharing one would
 		// make the panel look like the window it is trying to open.
 		app.Title(panelTitle),
-		app.Size(unit.Dp(panelW), unit.Dp(panelH)),
-		app.MinSize(unit.Dp(320), unit.Dp(300)),
+		app.Size(unit.Dp(panelWidth), unit.Dp(ui.lastHeight)),
+		app.MinSize(unit.Dp(240), unit.Dp(minPanelH)),
 		app.Decorated(false),
 	)
-
-	ui := newPanelUI(s, w)
 
 	// Repaint on a slow tick so counts stay current while the panel is open
 	// without the poller needing to know a window exists.
@@ -89,6 +104,7 @@ func runPanel(ctx context.Context, s *state) {
 			gtx := app.NewContext(&ops, e)
 			ui.layout(ctx, gtx)
 			e.Frame(gtx.Ops)
+			ui.resizeIfNeeded()
 		}
 	}
 }
@@ -99,27 +115,44 @@ type rowWidgets struct {
 	open   widget.Clickable
 }
 
+// scopeWidgets is the click state for one entry in the scope picker.
+type scopeWidgets struct {
+	click widget.Clickable
+}
+
 type panelUI struct {
 	s  *state
 	w  *app.Window
 	th *material.Theme
 
-	list layout.List
+	list      layout.List
+	scopeList layout.List
 
 	refresh  widget.Clickable
 	openFull widget.Clickable
 	closeBtn widget.Clickable
 	syncAll  widget.Clickable
-	rows     map[string]*rowWidgets
+	scopeBtn widget.Clickable
+
+	rows   map[string]*rowWidgets
+	scopes map[string]*scopeWidgets
+
+	// scopeOpen shows the watch picker in place of the repository list.
+	scopeOpen bool
+	// lastHeight is what the window was last sized to, so it is not resized on
+	// every frame.
+	lastHeight int
 }
 
 func newPanelUI(s *state, w *app.Window) *panelUI {
 	return &panelUI{
-		s:    s,
-		w:    w,
-		th:   newTheme(),
-		list: layout.List{Axis: layout.Vertical},
-		rows: map[string]*rowWidgets{},
+		s:         s,
+		w:         w,
+		th:        newTheme(),
+		list:      layout.List{Axis: layout.Vertical},
+		scopeList: layout.List{Axis: layout.Vertical},
+		rows:      map[string]*rowWidgets{},
+		scopes:    map[string]*scopeWidgets{},
 	}
 }
 
@@ -132,10 +165,49 @@ func (p *panelUI) rowFor(path string) *rowWidgets {
 	return rw
 }
 
+func (p *panelUI) scopeFor(key string) *scopeWidgets {
+	sw, ok := p.scopes[key]
+	if !ok {
+		sw = &scopeWidgets{}
+		p.scopes[key] = sw
+	}
+	return sw
+}
+
+// wantHeight is the height the panel would like: exactly its contents, within
+// sensible bounds.
+func (p *panelUI) wantHeight() int {
+	var body int
+	if p.scopeOpen {
+		body = len(p.scopeEntries()) * scopeRowH
+	} else {
+		body = len(flatten(p.s.watched())) * rowHeight
+	}
+	h := headerHeight + body + footerHeight + 8
+	if h < minPanelH {
+		h = minPanelH
+	}
+	if h > maxPanelH {
+		h = maxPanelH
+	}
+	return h
+}
+
+// resizeIfNeeded shrinks or grows the window to match its contents, once the
+// row count for the frame just drawn is known.
+func (p *panelUI) resizeIfNeeded() {
+	h := p.wantHeight()
+	// A couple of pixels of drift is not worth a resize; anything more is.
+	if abs(h-p.lastHeight) <= 2 {
+		return
+	}
+	p.lastHeight = h
+	p.w.Option(app.Size(unit.Dp(panelWidth), unit.Dp(h)))
+}
+
 func (p *panelUI) layout(ctx context.Context, gtx layout.Context) layout.Dimensions {
 	fill(gtx, colBg)
 
-	// Header actions.
 	if p.refresh.Clicked(gtx) {
 		p.s.askRefresh()
 	}
@@ -150,19 +222,21 @@ func (p *panelUI) layout(ctx context.Context, gtx layout.Context) layout.Dimensi
 	if p.syncAll.Clicked(gtx) {
 		go p.s.runOpAll(ctx, "sync")
 	}
-
-	watched := p.s.watched()
+	if p.scopeBtn.Clicked(gtx) {
+		p.scopeOpen = !p.scopeOpen
+	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.header(gtx) }),
+		layout.Rigid(p.header),
 		layout.Rigid(rule),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return p.body(ctx, gtx, watched)
+			if p.scopeOpen {
+				return p.scopePicker(gtx)
+			}
+			return p.body(ctx, gtx)
 		}),
 		layout.Rigid(rule),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return p.footer(gtx, watched)
-		}),
+		layout.Rigid(p.footer),
 	)
 }
 
@@ -170,45 +244,86 @@ func (p *panelUI) close() {
 	p.w.Perform(system.ActionClose)
 }
 
+// header carries the title, the watch scope and the window buttons. The strip
+// is also the drag handle: the window is undecorated, so without this there is
+// no way to move it.
 func (p *panelUI) header(gtx layout.Context) layout.Dimensions {
 	_, health, busy := p.s.snapshot()
 
 	return layout.Inset{
-		Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(6),
+		Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(9), Right: unit.Dp(4),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			// The title and the gap after the scope are the drag handles. The
+			// buttons deliberately are not: a move area answers WM_NCHITTEST
+			// with HTCAPTION, and Windows then swallows the click before the
+			// app ever sees it, so anything clickable must sit outside one.
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(p.th, unit.Sp(13), "GitDeck")
-				l.Color = colInk
-				l.Font.Weight = 600
-				return l.Layout(gtx)
+				return p.dragZone(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							l := material.Label(p.th, unit.Sp(12.5), "GitDeck")
+							l.Color = colInk
+							l.Font.Weight = 600
+							return l.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(7)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return dot(gtx, healthColour(health))
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(5)}.Layout),
+					)
+				})
 			}),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return dot(gtx, healthColour(health))
+			layout.Rigid(p.scopeButton),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return p.dragZone(gtx, func(gtx layout.Context) layout.Dimensions {
+					// A flexed child's cross-axis minimum is zero, so taking
+					// Constraints.Min here would give the drag area no height
+					// and nothing to hit.
+					return layout.Dimensions{
+						Size: image.Pt(gtx.Constraints.Min.X, gtx.Dp(unit.Dp(18))),
+					}
+				})
 			}),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(5)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(p.th, unit.Sp(10.5), p.scopeLabel())
-				l.Color = colInkFaint
-				l.MaxLines = 1
-				return l.Layout(gtx)
-			}),
-			layout.Flexed(1, layout.Spacer{}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				col := colInkFaint
 				label := "refresh"
 				if busy {
+					col = colAccent
 					label = "working"
 				}
-				return p.smallButton(gtx, &p.refresh, label, colInkFaint)
+				return p.textButton(gtx, &p.refresh, label, col)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return p.smallButton(gtx, &p.openFull, "open", colInkFaint)
+				return p.textButton(gtx, &p.openFull, "open", colInkFaint)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return p.smallButton(gtx, &p.closeBtn, "close", colInkFaint)
+				return p.textButton(gtx, &p.closeBtn, "close", colInkFaint)
 			}),
 		)
+	})
+}
+
+// dragZone marks a widget's area as somewhere the window can be dragged from.
+func (p *panelUI) dragZone(gtx layout.Context, w layout.Widget) layout.Dimensions {
+	dims := w(gtx)
+	defer clip.Rect{Max: dims.Size}.Push(gtx.Ops).Pop()
+	system.ActionInputOp(system.ActionMove).Add(gtx.Ops)
+	return dims
+}
+
+// scopeButton opens the watch picker.
+func (p *panelUI) scopeButton(gtx layout.Context) layout.Dimensions {
+	return material.Clickable(gtx, &p.scopeBtn, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{
+			Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(3), Right: unit.Dp(3),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			l := material.Label(p.th, unit.Sp(10), "watching: "+p.scopeLabel())
+			l.Color = colInkFaint
+			l.MaxLines = 1
+			return l.Layout(gtx)
+		})
 	})
 }
 
@@ -223,8 +338,151 @@ func (p *panelUI) scopeLabel() string {
 	case "picked":
 		return strconv.Itoa(len(s.WatchPaths)) + " picked"
 	default:
-		return "all repositories"
+		return "all"
 	}
+}
+
+// scopeEntry is one line of the watch picker.
+type scopeEntry struct {
+	key    string
+	label  string
+	hint   string
+	active bool
+	// next is the settings to save when this entry is chosen. Keeping the
+	// outcome as data rather than a closure makes the whole picker testable
+	// without a window.
+	next store.Settings
+	// keepOpen is true for entries that are part of a multi-step choice.
+	keepOpen bool
+}
+
+// buildScopeEntries lists what the panel can watch: everything, each group,
+// then each repository as an individually tickable option.
+func buildScopeEntries(all []repos.View, set store.Settings) []scopeEntry {
+	groups := map[string]int{}
+	var order []string
+	for _, v := range all {
+		if v.Group == "" {
+			continue
+		}
+		if _, seen := groups[v.Group]; !seen {
+			order = append(order, v.Group)
+		}
+		groups[v.Group]++
+	}
+
+	withMode := func(mode, group string, paths []string) store.Settings {
+		out := set
+		out.WatchMode = mode
+		out.WatchGroup = group
+		out.WatchPaths = paths
+		return out
+	}
+
+	entries := []scopeEntry{{
+		key:    "all",
+		label:  "All repositories",
+		hint:   strconv.Itoa(len(all)),
+		active: set.WatchMode == "" || set.WatchMode == "all",
+		next:   withMode("all", "", set.WatchPaths),
+	}}
+
+	for _, g := range order {
+		entries = append(entries, scopeEntry{
+			key:    "g:" + g,
+			label:  g,
+			hint:   strconv.Itoa(groups[g]),
+			active: set.WatchMode == "group" && set.WatchGroup == g,
+			next:   withMode("group", g, set.WatchPaths),
+		})
+	}
+
+	picked := map[string]bool{}
+	for _, path := range set.WatchPaths {
+		picked[path] = true
+	}
+	for _, v := range all {
+		// Ticking a repository switches to a hand-picked set and toggles that
+		// one, so the picker behaves like a row of checkboxes.
+		next := make([]string, 0, len(set.WatchPaths)+1)
+		for _, path := range set.WatchPaths {
+			if path != v.Path {
+				next = append(next, path)
+			}
+		}
+		if !picked[v.Path] {
+			next = append(next, v.Path)
+		}
+		entries = append(entries, scopeEntry{
+			key:      "r:" + v.Path,
+			label:    v.Name,
+			hint:     v.Group,
+			active:   set.WatchMode == "picked" && picked[v.Path],
+			next:     withMode("picked", "", next),
+			keepOpen: true,
+		})
+	}
+	return entries
+}
+
+func (p *panelUI) scopeEntries() []scopeEntry {
+	all, _, _ := p.s.snapshot()
+	return buildScopeEntries(all, p.s.settings())
+}
+
+func (p *panelUI) applyScope(e scopeEntry) {
+	if err := p.s.store.SaveSettings(e.next); err != nil {
+		return
+	}
+	if !e.keepOpen {
+		p.scopeOpen = false
+	}
+}
+
+func (p *panelUI) scopePicker(gtx layout.Context) layout.Dimensions {
+	entries := p.scopeEntries()
+	return p.scopeList.Layout(gtx, len(entries), func(gtx layout.Context, i int) layout.Dimensions {
+		e := entries[i]
+		sw := p.scopeFor(e.key)
+		if sw.click.Clicked(gtx) {
+			p.applyScope(e)
+		}
+		return material.Clickable(gtx, &sw.click, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{
+				Top: unit.Dp(3), Bottom: unit.Dp(3), Left: unit.Dp(8), Right: unit.Dp(8),
+			}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						mark := "  "
+						if e.active {
+							mark = "x "
+						}
+						l := material.Label(p.th, unit.Sp(11), mark)
+						l.Color = colAccent
+						return l.Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(5)}.Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						l := material.Label(p.th, unit.Sp(11.5), e.label)
+						l.Color = colInkSoft
+						if e.active {
+							l.Color = colInk
+						}
+						l.MaxLines = 1
+						return l.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if e.hint == "" {
+							return layout.Dimensions{}
+						}
+						l := material.Label(p.th, unit.Sp(10), e.hint)
+						l.Color = colInkFaint
+						return l.Layout(gtx)
+					}),
+				)
+			})
+		})
+	})
 }
 
 // flatRow is a repository or one of its worktrees, already flattened for the
@@ -254,16 +512,15 @@ func flatten(views []repos.View) []flatRow {
 	return out
 }
 
-func (p *panelUI) body(ctx context.Context, gtx layout.Context, views []repos.View) layout.Dimensions {
-	rows := flatten(views)
+func (p *panelUI) body(ctx context.Context, gtx layout.Context) layout.Dimensions {
+	rows := flatten(p.s.watched())
 	if len(rows) == 0 {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			l := material.Label(p.th, unit.Sp(12), "Nothing being watched.")
+			l := material.Label(p.th, unit.Sp(11), "Nothing watched. Use the eye above.")
 			l.Color = colInkFaint
 			return l.Layout(gtx)
 		})
 	}
-
 	return p.list.Layout(gtx, len(rows), func(gtx layout.Context, i int) layout.Dimensions {
 		return p.row(ctx, gtx, rows[i])
 	})
@@ -273,20 +530,19 @@ func (p *panelUI) row(ctx context.Context, gtx layout.Context, r flatRow) layout
 	rw := p.rowFor(r.path)
 
 	if rw.action.Clicked(gtx) {
-		op := primaryOp(r.status)
-		if op != "" {
+		if op := primaryOp(r.status); op != "" {
 			go p.s.runOp(ctx, r.path, op)
 		}
 	}
 
 	left := unit.Dp(8)
 	if r.nested {
-		left = unit.Dp(24)
+		left = unit.Dp(22)
 	}
 
 	return material.Clickable(gtx, &rw.open, func(gtx layout.Context) layout.Dimensions {
-		// A worktree hangs off a rail so it reads as belonging to the row above,
-		// the same way the full window draws it.
+		// A worktree hangs off a rail so it reads as belonging to the row
+		// above, the same way the full window draws it.
 		return layout.Stack{}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 				if !r.nested {
@@ -303,7 +559,7 @@ func (p *panelUI) row(ctx context.Context, gtx layout.Context, r flatRow) layout
 					railH = elbowY
 				}
 				bar(gtx.Ops, railX, 0, w, railH, colLine)
-				bar(gtx.Ops, railX, elbowY, gtx.Dp(unit.Dp(7)), w, colLine)
+				bar(gtx.Ops, railX, elbowY, gtx.Dp(unit.Dp(6)), w, colLine)
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
@@ -314,44 +570,42 @@ func (p *panelUI) row(ctx context.Context, gtx layout.Context, r flatRow) layout
 }
 
 func (p *panelUI) rowBody(gtx layout.Context, r flatRow, rw *rowWidgets, left unit.Dp) layout.Dimensions {
-	{
-		return layout.Inset{
-			Top: unit.Dp(4), Bottom: unit.Dp(4), Left: left, Right: unit.Dp(6),
-		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return dot(gtx, statusColour(r.status))
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(7)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(p.th, unit.Sp(12), r.name)
-					l.Color = colInk
-					if r.nested {
-						l.Color = colInkSoft
-					}
-					l.MaxLines = 1
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(p.th, unit.Sp(10.5), r.status.Branch)
-					l.Color = colInkFaint
-					l.MaxLines = 1
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return p.counters(gtx, r.status)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					label := primaryLabel(r.status)
-					if label == "" {
-						return layout.Dimensions{}
-					}
-					return p.smallButton(gtx, &rw.action, label, colAccent)
-				}),
-			)
-		})
-	}
+	return layout.Inset{
+		Top: unit.Dp(3), Bottom: unit.Dp(3), Left: left, Right: unit.Dp(4),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return dot(gtx, statusColour(r.status))
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(p.th, unit.Sp(11.5), r.name)
+				l.Color = colInk
+				if r.nested {
+					l.Color = colInkSoft
+				}
+				l.MaxLines = 1
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(5)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(p.th, unit.Sp(10), r.status.Branch)
+				l.Color = colInkFaint
+				l.MaxLines = 1
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return p.counters(gtx, r.status)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				label := primaryOp(r.status)
+				if label == "" {
+					return layout.Dimensions{}
+				}
+				return p.textButton(gtx, &rw.action, label, colAccent)
+			}),
+		)
+	})
 }
 
 func (p *panelUI) counters(gtx layout.Context, st gitx.Status) layout.Dimensions {
@@ -365,10 +619,10 @@ func (p *panelUI) counters(gtx layout.Context, st gitx.Status) layout.Dimensions
 		pills = append(pills, pill{strconv.Itoa(d), colDirty})
 	}
 	if st.Behind > 0 {
-		pills = append(pills, pill{"v" + strconv.Itoa(st.Behind), colBehind})
+		pills = append(pills, pill{strconv.Itoa(st.Behind), colBehind})
 	}
 	if st.Ahead > 0 {
-		pills = append(pills, pill{"^" + strconv.Itoa(st.Ahead), colAhead})
+		pills = append(pills, pill{strconv.Itoa(st.Ahead), colAhead})
 	}
 	if len(pills) == 0 {
 		return layout.Dimensions{}
@@ -378,8 +632,8 @@ func (p *panelUI) counters(gtx layout.Context, st gitx.Status) layout.Dimensions
 	for _, pl := range pills {
 		pl := pl
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(p.th, unit.Sp(10), pl.text)
+			return layout.Inset{Right: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(p.th, unit.Sp(9.5), pl.text)
 				l.Color = pl.col
 				return l.Layout(gtx)
 			})
@@ -388,47 +642,46 @@ func (p *panelUI) counters(gtx layout.Context, st gitx.Status) layout.Dimensions
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
-func (p *panelUI) footer(gtx layout.Context, views []repos.View) layout.Dimensions {
-	c := repos.Summarise(views)
+func (p *panelUI) footer(gtx layout.Context) layout.Dimensions {
+	c := repos.Summarise(p.s.watched())
 
 	return layout.Inset{
-		Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(10), Right: unit.Dp(6),
+		Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(9), Right: unit.Dp(4),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(p.th, unit.Sp(10.5),
-					fmt.Sprintf("%d watched", c.Rows))
+				l := material.Label(p.th, unit.Sp(10), strconv.Itoa(c.Rows)+" watched")
 				l.Color = colInkFaint
 				return l.Layout(gtx)
 			}),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(7)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if c.Unpushed == 0 {
 					return layout.Dimensions{}
 				}
-				l := material.Label(p.th, unit.Sp(10.5), strconv.Itoa(c.Unpushed)+" to push")
+				l := material.Label(p.th, unit.Sp(10), strconv.Itoa(c.Unpushed)+" to push")
 				l.Color = colAhead
 				return l.Layout(gtx)
 			}),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(7)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if c.Dirty == 0 {
 					return layout.Dimensions{}
 				}
-				l := material.Label(p.th, unit.Sp(10.5), strconv.Itoa(c.Dirty)+" dirty")
+				l := material.Label(p.th, unit.Sp(10), strconv.Itoa(c.Dirty)+" dirty")
 				l.Color = colDirty
 				return l.Layout(gtx)
 			}),
 			layout.Flexed(1, layout.Spacer{}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return p.smallButton(gtx, &p.syncAll, "sync watched", colInkSoft)
+				return p.textButton(gtx, &p.syncAll, "sync watched", colInkSoft)
 			}),
 		)
 	})
 }
 
-// smallButton is a compact text button with a hover background.
-func (p *panelUI) smallButton(gtx layout.Context, click *widget.Clickable, label string, col color.NRGBA) layout.Dimensions {
+// textButton is a compact label with a hover background.
+func (p *panelUI) textButton(gtx layout.Context, click *widget.Clickable, label string, col color.NRGBA) layout.Dimensions {
 	return layout.Inset{Left: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return material.Clickable(gtx, click, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{
@@ -463,20 +716,6 @@ func primaryOp(st gitx.Status) string {
 	}
 }
 
-func primaryLabel(st gitx.Status) string {
-	switch primaryOp(st) {
-	case "publish":
-		return "publish"
-	case "sync":
-		return "sync"
-	case "pull":
-		return "pull"
-	case "push":
-		return "push"
-	}
-	return ""
-}
-
 func statusColour(st gitx.Status) color.NRGBA {
 	switch {
 	case st.Error != "" || st.Conflicted > 0:
@@ -505,4 +744,11 @@ func healthColour(h github.Health) color.NRGBA {
 	default:
 		return colInkFaint
 	}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

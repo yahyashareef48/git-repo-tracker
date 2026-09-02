@@ -53,6 +53,8 @@ type state struct {
 	refresh chan struct{}
 	// showPanel asks the UI goroutine to open the panel.
 	showPanel chan struct{}
+	// startScopeOpen makes the next panel open with the watch picker showing.
+	startScopeOpen bool
 	// quit unwinds everything.
 	quit chan struct{}
 	once sync.Once
