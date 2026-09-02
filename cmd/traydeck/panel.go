@@ -23,21 +23,9 @@ import (
 	"gitdeck/internal/store"
 )
 
-// The panel sizes itself to its contents. A fixed box left most of the window
-// empty for anyone watching a handful of repositories, which is the common case
-// and the one worth optimising for.
-const (
-	panelWidth = 340
-
-	rowHeight    = 21
-	headerHeight = 30
-	footerHeight = 26
-	minPanelH    = 240
-	maxPanelH    = 620
-	// scopeRowH is a row in the scope picker, slightly taller than a repository
-	// row because it carries a tick.
-	scopeRowH = 22
-)
+// The panel is a square widget sized from the screen, see screen.go. Rows and
+// the scope picker scroll inside it, so the window never resizes itself while
+// you are looking at it.
 
 // panelLoop owns the panel window. The window is created when asked for and
 // destroyed when closed, rather than kept hidden: a live window holds a GPU
@@ -66,15 +54,18 @@ func runPanel(ctx context.Context, s *state) {
 	w := new(app.Window)
 	ui := newPanelUI(s, w)
 	ui.scopeOpen = s.startScopeOpen
-	ui.lastHeight = ui.wantHeight()
+
+	// An opening guess, corrected on the first frame once Gio reports the
+	// scale of the monitor the window actually landed on.
+	side := squareDp(primaryWidthPx(), guessScale())
 
 	w.Option(
 		// Deliberately not "GitDeck": the full window uses that title, and the
 		// launcher finds an already-running window by title. Sharing one would
 		// make the panel look like the window it is trying to open.
 		app.Title(panelTitle),
-		app.Size(unit.Dp(panelWidth), unit.Dp(ui.lastHeight)),
-		app.MinSize(unit.Dp(240), unit.Dp(minPanelH)),
+		app.Size(side, side),
+		app.MinSize(side, side),
 		app.Decorated(false),
 	)
 
@@ -104,7 +95,7 @@ func runPanel(ctx context.Context, s *state) {
 			gtx := app.NewContext(&ops, e)
 			ui.layout(ctx, gtx)
 			e.Frame(gtx.Ops)
-			ui.resizeIfNeeded()
+			ui.sizeOnce(gtx)
 		}
 	}
 }
@@ -139,9 +130,10 @@ type panelUI struct {
 
 	// scopeOpen shows the watch picker in place of the repository list.
 	scopeOpen bool
-	// lastHeight is what the window was last sized to, so it is not resized on
-	// every frame.
-	lastHeight int
+
+	// sized guards the one resize to the real scale, so the window is not
+	// asked to resize on every frame.
+	sized bool
 }
 
 func newPanelUI(s *state, w *app.Window) *panelUI {
@@ -174,35 +166,15 @@ func (p *panelUI) scopeFor(key string) *scopeWidgets {
 	return sw
 }
 
-// wantHeight is the height the panel would like: exactly its contents, within
-// sensible bounds.
-func (p *panelUI) wantHeight() int {
-	var body int
-	if p.scopeOpen {
-		body = len(p.scopeEntries()) * scopeRowH
-	} else {
-		body = len(flatten(p.s.watched())) * rowHeight
-	}
-	h := headerHeight + body + footerHeight + 8
-	if h < minPanelH {
-		h = minPanelH
-	}
-	if h > maxPanelH {
-		h = maxPanelH
-	}
-	return h
-}
-
-// resizeIfNeeded shrinks or grows the window to match its contents, once the
-// row count for the frame just drawn is known.
-func (p *panelUI) resizeIfNeeded() {
-	h := p.wantHeight()
-	// A couple of pixels of drift is not worth a resize; anything more is.
-	if abs(h-p.lastHeight) <= 2 {
+// sizeOnce squares the window to a sixth of the screen using Gio's own scale,
+// which is only known once a frame has been drawn.
+func (p *panelUI) sizeOnce(gtx layout.Context) {
+	if p.sized {
 		return
 	}
-	p.lastHeight = h
-	p.w.Option(app.Size(unit.Dp(panelWidth), unit.Dp(h)))
+	p.sized = true
+	side := squareDp(primaryWidthPx(), gtx.Metric.PxPerDp)
+	p.w.Option(app.Size(side, side), app.MinSize(side, side))
 }
 
 func (p *panelUI) layout(ctx context.Context, gtx layout.Context) layout.Dimensions {
@@ -516,7 +488,7 @@ func (p *panelUI) body(ctx context.Context, gtx layout.Context) layout.Dimension
 	rows := flatten(p.s.watched())
 	if len(rows) == 0 {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			l := material.Label(p.th, unit.Sp(11), "Nothing watched. Use the eye above.")
+			l := material.Label(p.th, unit.Sp(11), "Nothing watched. Pick some from \"watching\" above.")
 			l.Color = colInkFaint
 			return l.Layout(gtx)
 		})
@@ -744,11 +716,4 @@ func healthColour(h github.Health) color.NRGBA {
 	default:
 		return colInkFaint
 	}
-}
-
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
 }
